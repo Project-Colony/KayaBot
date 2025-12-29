@@ -1,4 +1,4 @@
-use eframe::egui::{self, Align2, Button, Color32, FontId, Frame, Layout, RichText, ScrollArea, Stroke, Vec2};
+use eframe::egui::{self, Button, Color32, FontId, Frame, Layout, RichText, ScrollArea, Stroke, Vec2};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LeftNav {
@@ -276,7 +276,7 @@ impl RenameApp {
         let response = ui.add_sized(
             Vec2::new(70.0, 70.0),
             Button::new(RichText::new(format!("{icon}\n{label}")).size(14.0))
-                .wrap()
+                .wrap(true)
                 .fill(Color32::from_gray(250))
                 .stroke(Stroke::new(1.0, Color32::from_gray(160))),
         );
@@ -288,8 +288,9 @@ impl RenameApp {
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
-        initial_window_size: Some(Vec2::new(1100.0, 650.0)),
-        resizable: true,
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size(Vec2::new(1100.0, 650.0))
+            .with_resizable(true),
         ..Default::default()
     };
 
