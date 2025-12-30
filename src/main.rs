@@ -865,6 +865,7 @@ impl RenameApp {
                         season: *season,
                         episode: *episode,
                         title: resolved_title,
+                        year: None,
                     },
                     self.format_options,
                 )

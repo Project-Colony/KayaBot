@@ -29,10 +29,18 @@ Ce dossier rassemble la documentation fonctionnelle et technique de KayaBot.
   - remplacement de la ponctuation par des espaces,
   - réduction des espaces multiples.
 
+Templates FileBot (tokens supportés) :
+
+- `{n}` : titre principal (série ou film).
+- `{t}` : titre d'épisode.
+- `{s}` / `{s00}` : numéro de saison (avec padding optionnel).
+- `{e}` / `{e00}` : numéro d'épisode (avec padding optionnel).
+- `{y}` : année de sortie (si disponible).
+
 Formats finaux (et fallbacks) :
 
-- Films : `{Title} ({Year})` (si `Year` est absent, on affiche uniquement `{Title}`).
-- Séries : `{Series Title} {Season}x{Episode} - {Episode Title}` (si `Episode Title` est absent, le suffixe ` - {Episode Title}` est omis).
+- Films : `{n} ({y})` (si `{y}` est absent, la parenthèse est supprimée).
+- Séries : `{n} {s}x{e} - {t}` (si `{t}` est absent, le suffixe ` - {t}` est supprimé).
 
 ### Métadonnées
 
