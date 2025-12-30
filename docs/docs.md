@@ -66,3 +66,18 @@ Remarques :
 
 - Aucun test automatisé n'est encore défini.
 - Ajouter des tests unitaires sur le parsing/formatage est prioritaire pour stabiliser le MVP.
+
+## Configuration (placeholders)
+
+Les clés d'API et identifiants sont documentés via `.env.example` (à copier en `.env` si besoin). Aucune lecture d'env n'est encore implémentée côté code, mais les variables suivantes sont prévues :
+
+- `KAYABOT_TMDB_API_KEY`
+- `KAYABOT_TMDB_BEARER_TOKEN`
+- `KAYABOT_TVDB_API_KEY`
+- `KAYABOT_TVDB_PIN`
+- `KAYABOT_TVMAZE_API_KEY`
+- `KAYABOT_OMDB_API_KEY`
+- `KAYABOT_ANIDB_USERNAME`
+- `KAYABOT_ANIDB_PASSWORD`
+- `KAYABOT_ANIDB_CLIENT_NAME`
+- `KAYABOT_ANIDB_CLIENT_VERSION`
