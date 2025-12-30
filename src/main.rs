@@ -1,6 +1,9 @@
 mod metadata;
 
 use eframe::egui::{self, Button, Color32, FontId, Frame, Layout, RichText, ScrollArea, Stroke, Vec2};
+use metadata::filebot_like::FileBotLikeProvider;
+use metadata::models::{EpisodeMatch, TitleMatch};
+use metadata::provider::MetadataProvider;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LeftNav {
@@ -12,10 +15,33 @@ enum LeftNav {
     List,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ContentType {
+    Movie,
+    Series,
+}
+
+#[derive(Debug, Clone)]
+enum FetchStatus {
+    Idle,
+    Loading,
+    Ready,
+    Error(String),
+}
+
 struct RenameApp {
     active_left_nav: LeftNav,
     original_files: Vec<String>,
     new_names: Vec<String>,
+    content_type: ContentType,
+    detected_series_name: String,
+    fetch_status: FetchStatus,
+    title_matches: Vec<TitleMatch>,
+    selected_title_id: Option<String>,
+    episode_matches: Vec<EpisodeMatch>,
+    show_match_picker: bool,
+    rename_feedback: Option<(usize, usize)>,
+    metadata_provider: FileBotLikeProvider,
 }
 
 impl Default for RenameApp {
@@ -68,6 +94,15 @@ impl Default for RenameApp {
             active_left_nav: LeftNav::Rename,
             original_files,
             new_names,
+            content_type: ContentType::Series,
+            detected_series_name: "Alias".to_string(),
+            fetch_status: FetchStatus::Idle,
+            title_matches: Vec::new(),
+            selected_title_id: None,
+            episode_matches: Vec::new(),
+            show_match_picker: false,
+            rename_feedback: None,
+            metadata_provider: FileBotLikeProvider::new(),
         }
     }
 }
@@ -78,7 +113,7 @@ impl eframe::App for RenameApp {
             ui.horizontal(|ui| {
                 self.left_sidebar(ui);
                 ui.add_space(10.0);
-                self.main_content(ui);
+                self.main_content(ctx, ui);
             });
         });
     }
@@ -149,7 +184,7 @@ impl RenameApp {
         }
     }
 
-    fn main_content(&mut self, ui: &mut egui::Ui) {
+    fn main_content(&mut self, ctx: &egui::Context, ui: &mut egui::Ui) {
         let available_width = ui.available_width();
         ui.allocate_ui_with_layout(
             Vec2::new(available_width, ui.available_height()),
@@ -174,6 +209,8 @@ impl RenameApp {
                     let right_width = left_width;
 
                     self.list_panel(ui, "Original Files", left_width, &self.original_files, |ui| {
+                        ui.add_space(6.0);
+                    }, |ui| {
                         ui.horizontal(|ui| {
                             ui.add_sized(Vec2::new(32.0, 26.0), Button::new("⬇"));
                             ui.add_sized(Vec2::new(32.0, 26.0), Button::new("⬆"));
@@ -188,21 +225,52 @@ impl RenameApp {
                     ui.add_space(10.0);
 
                     self.list_panel(ui, "New Names", right_width, &self.new_names, |ui| {
+                        ui.add_space(6.0);
+                        self.fetch_data_panel(ui);
+                    }, |ui| {
                         ui.horizontal(|ui| {
                             ui.add_sized(Vec2::new(32.0, 26.0), Button::new("⬇"));
                             ui.add_sized(Vec2::new(32.0, 26.0), Button::new("⬆"));
                             ui.add_sized(Vec2::new(70.0, 26.0), Button::new("📂 Load"));
-                            ui.add_sized(Vec2::new(92.0, 26.0), Button::new("Fetch Data"));
-                            ui.add_sized(Vec2::new(32.0, 26.0), Button::new("🔧"));
+                            let fetch_label = match self.fetch_status {
+                                FetchStatus::Loading => "Fetching...",
+                                _ => "Fetch Data",
+                            };
+                            let fetch_clicked = ui
+                                .add_enabled(
+                                    !matches!(self.fetch_status, FetchStatus::Loading),
+                                    Button::new(fetch_label),
+                                )
+                                .clicked();
+                            if fetch_clicked {
+                                self.fetch_metadata();
+                            }
+                            let adjust_clicked = ui.add_sized(Vec2::new(32.0, 26.0), Button::new("🔧")).clicked();
+                            if adjust_clicked {
+                                self.show_match_picker = true;
+                            }
                         });
                     });
                 });
+
+                if self.show_match_picker {
+                    self.match_picker_window(ctx);
+                }
             },
         );
     }
 
-    fn list_panel<F>(&self, ui: &mut egui::Ui, title: &str, width: f32, items: &[String], toolbar: F)
+    fn list_panel<C, F>(
+        &self,
+        ui: &mut egui::Ui,
+        title: &str,
+        width: f32,
+        items: &[String],
+        content: C,
+        toolbar: F,
+    )
     where
+        C: FnOnce(&mut egui::Ui),
         F: FnOnce(&mut egui::Ui),
     {
         let panel_frame = Frame::none()
@@ -239,6 +307,7 @@ impl RenameApp {
                                     });
                             });
 
+                        content(ui);
                         ui.add_space(8.0);
                         ui.with_layout(Layout::left_to_right(egui::Align::Center), |ui| {
                             ui.set_min_height(toolbar_height);
@@ -287,7 +356,171 @@ impl RenameApp {
         );
         if response.clicked() {
             println!("Action clicked: {label}");
+            if label == "Rename" {
+                let matched = self
+                    .episode_matches
+                    .len()
+                    .min(self.original_files.len());
+                let unmatched = self.original_files.len().saturating_sub(matched);
+                self.rename_feedback = Some((matched, unmatched));
+            }
         }
+    }
+
+    fn fetch_metadata(&mut self) {
+        self.fetch_status = FetchStatus::Loading;
+        self.rename_feedback = None;
+
+        if self.detected_series_name.trim().is_empty() {
+            if let Some(detected) = self.detect_series_name() {
+                self.detected_series_name = detected;
+            }
+        }
+
+        let query = self.detected_series_name.trim();
+        match self.metadata_provider.search_title(query) {
+            Ok(matches) => {
+                self.title_matches = matches.clone();
+                if let Some(best) = matches
+                    .iter()
+                    .max_by(|a, b| a.score.partial_cmp(&b.score).unwrap_or(std::cmp::Ordering::Equal))
+                {
+                    self.selected_title_id = Some(best.id.clone());
+                }
+                if self.content_type == ContentType::Series {
+                    self.fetch_episodes();
+                } else {
+                    self.episode_matches.clear();
+                }
+                self.fetch_status = FetchStatus::Ready;
+            }
+            Err(err) => {
+                self.title_matches.clear();
+                self.episode_matches.clear();
+                self.selected_title_id = None;
+                self.fetch_status = FetchStatus::Error(err.to_string());
+            }
+        }
+    }
+
+    fn fetch_episodes(&mut self) {
+        let Some(title_id) = self.selected_title_id.clone() else {
+            self.fetch_status = FetchStatus::Error("Select a title match first.".to_string());
+            return;
+        };
+        match self.metadata_provider.fetch_episode_list(&title_id) {
+            Ok(episodes) => {
+                self.episode_matches = episodes;
+            }
+            Err(err) => {
+                self.episode_matches.clear();
+                self.fetch_status = FetchStatus::Error(err.to_string());
+            }
+        }
+    }
+
+    fn detect_series_name(&self) -> Option<String> {
+        let file = self.original_files.first()?;
+        let mut parts = file
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|part| !part.is_empty());
+        parts.next().map(|value| value.to_string())
+    }
+
+    fn fetch_data_panel(&mut self, ui: &mut egui::Ui) {
+        ui.group(|ui| {
+            ui.label(RichText::new("Fetch Inputs").size(12.0));
+            ui.horizontal(|ui| {
+                ui.label("Type");
+                egui::ComboBox::from_id_source("content_type")
+                    .selected_text(match self.content_type {
+                        ContentType::Movie => "Movie",
+                        ContentType::Series => "Series",
+                    })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut self.content_type, ContentType::Movie, "Movie");
+                        ui.selectable_value(&mut self.content_type, ContentType::Series, "Series");
+                    });
+                ui.label("Series");
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.detected_series_name)
+                        .hint_text("Detected name")
+                        .desired_width(140.0),
+                );
+            });
+
+            match &self.fetch_status {
+                FetchStatus::Loading => {
+                    ui.label(RichText::new("Loading metadata...").color(Color32::from_rgb(80, 80, 160)));
+                }
+                FetchStatus::Error(message) => {
+                    ui.label(RichText::new(message).color(Color32::from_rgb(160, 40, 40)));
+                }
+                _ => {}
+            }
+
+            ui.add_space(6.0);
+            ui.label(RichText::new("Proposed Results").size(12.0));
+            if self.content_type == ContentType::Series {
+                if self.episode_matches.is_empty() {
+                    ui.label(RichText::new("No episodes loaded yet.").color(Color32::from_gray(100)));
+                } else {
+                    ScrollArea::vertical()
+                        .max_height(120.0)
+                        .show(ui, |ui| {
+                            for episode in &self.episode_matches {
+                                ui.label(format!(
+                                    "S{:02}E{:02} - {}",
+                                    episode.season, episode.episode, episode.title
+                                ));
+                            }
+                        });
+                }
+            } else if self.title_matches.is_empty() {
+                ui.label(RichText::new("No title matches yet.").color(Color32::from_gray(100)));
+            } else {
+                ScrollArea::vertical().max_height(120.0).show(ui, |ui| {
+                    for title in &self.title_matches {
+                        ui.label(format!("{} ({})", title.name, title.source));
+                    }
+                });
+            }
+
+            if let Some((matched, unmatched)) = self.rename_feedback {
+                ui.add_space(6.0);
+                ui.label(RichText::new(format!("{matched} renamed / {unmatched} unmatched")).strong());
+            }
+        });
+    }
+
+    fn match_picker_window(&mut self, ctx: &egui::Context) {
+        let mut open = self.show_match_picker;
+        egui::Window::new("Adjust Title Match")
+            .open(&mut open)
+            .show(ctx, |ui| {
+                if self.title_matches.is_empty() {
+                    ui.label("Fetch data first to see matches.");
+                    return;
+                }
+
+                for title in &self.title_matches {
+                    let label = format!(
+                        "{}{} (score {:.2})",
+                        title.name,
+                        title.year.map(|year| format!(" {year}")).unwrap_or_default(),
+                        title.score
+                    );
+                    let selected = self.selected_title_id.as_deref() == Some(&title.id);
+                    if ui.selectable_label(selected, label).clicked() {
+                        self.selected_title_id = Some(title.id.clone());
+                        if self.content_type == ContentType::Series {
+                            self.fetch_episodes();
+                        }
+                        self.show_match_picker = false;
+                    }
+                }
+            });
+        self.show_match_picker = open;
     }
 }
 
