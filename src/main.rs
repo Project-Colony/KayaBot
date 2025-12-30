@@ -376,9 +376,8 @@ impl RenameApp {
         ui.separator();
         ui.add_space(8.0);
 
-        ui.horizontal(|ui| {
-            let menu_width = 200.0;
-            let content_width = ui.available_width() - menu_width - 12.0;
+        ui.vertical(|ui| {
+            let available_width = ui.available_width();
             let menu_frame = Frame::none()
                 .fill(Color32::from_gray(245))
                 .stroke(Stroke::new(1.0, Color32::from_gray(200)))
@@ -386,7 +385,7 @@ impl RenameApp {
                 .inner_margin(egui::Margin::symmetric(8.0, 8.0));
 
             menu_frame.show(ui, |ui| {
-                ui.set_min_width(menu_width);
+                ui.set_min_width(available_width);
                 ui.label(RichText::new("Menu").strong());
                 ui.add_space(6.0);
                 self.settings_section_button(ui, SettingsSection::Program, "🧰", "Program");
@@ -404,14 +403,16 @@ impl RenameApp {
                 .rounding(egui::Rounding::same(6.0))
                 .inner_margin(egui::Margin::symmetric(12.0, 12.0))
                 .show(ui, |ui| {
-                    ui.set_min_width(content_width);
-                    ScrollArea::vertical().show(ui, |ui| match self.active_settings_section {
-                        SettingsSection::Program => self.settings_program(ui),
-                        SettingsSection::Language => self.settings_language(ui),
-                        SettingsSection::Appearance => self.settings_appearance(ui),
-                        SettingsSection::Experience => self.settings_experience(ui),
-                        SettingsSection::Utilities => self.settings_utilities(ui),
-                    });
+                    ui.set_min_width(available_width);
+                    ScrollArea::vertical()
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| match self.active_settings_section {
+                            SettingsSection::Program => self.settings_program(ui),
+                            SettingsSection::Language => self.settings_language(ui),
+                            SettingsSection::Appearance => self.settings_appearance(ui),
+                            SettingsSection::Experience => self.settings_experience(ui),
+                            SettingsSection::Utilities => self.settings_utilities(ui),
+                        });
                 });
         });
     }
