@@ -11,20 +11,17 @@ const GLOBAL_FUZZY_WEIGHT: f32 = 0.35;
 const GLOBAL_SOURCE_WEIGHT: f32 = 0.10;
 const TITLE_SIMILARITY_THRESHOLD: f32 = 0.9;
 
-#[derive(Debug)]
 pub struct MetadataPipeline {
     providers: Vec<ProviderEntry>,
     active_sources: Vec<MetadataSource>,
     active_source: MetadataSource,
 }
 
-#[derive(Debug)]
 struct ProviderEntry {
     source: MetadataSource,
     provider: Box<dyn MetadataProvider>,
 }
 
-#[derive(Debug)]
 struct TitleGroup {
     best: TitleMatch,
     insertion_index: usize,
@@ -80,21 +77,17 @@ impl MetadataPipeline {
         self.active_source
     }
 
-    fn provider_mut(&mut self, source: MetadataSource) -> Option<&mut dyn MetadataProvider> {
-        self.providers
+    fn provider_mut(
+        &mut self,
+        source: MetadataSource,
+    ) -> Option<&mut (dyn MetadataProvider + '_)> {
+        let entry = self
+            .providers
             .iter_mut()
-            .find(|entry| entry.source == source)
-            .map(|entry| entry.provider.as_mut())
+            .find(|entry| entry.source == source)?;
+        Some(entry.provider.as_mut())
     }
 
-    fn active_providers(&mut self) -> Vec<(MetadataSource, &mut dyn MetadataProvider)> {
-        let active: HashSet<_> = self.active_sources.iter().copied().collect();
-        self.providers
-            .iter_mut()
-            .filter(|entry| active.contains(&entry.source))
-            .map(|entry| (entry.source, entry.provider.as_mut()))
-            .collect()
-    }
 }
 
 impl MetadataProvider for MetadataPipeline {
@@ -122,7 +115,14 @@ impl MetadataProvider for MetadataPipeline {
         let (tx, rx) = mpsc::channel();
 
         std::thread::scope(|scope| {
-            for (source, provider) in self.active_providers() {
+            let active: HashSet<_> = self.active_sources.iter().copied().collect();
+            for entry in self
+                .providers
+                .iter_mut()
+                .filter(|entry| active.contains(&entry.source))
+            {
+                let source = entry.source;
+                let provider = entry.provider.as_mut();
                 let tx = tx.clone();
                 let query = query_owned.clone();
                 scope.spawn(move || {
@@ -255,10 +255,10 @@ impl MetadataProvider for MetadataPipeline {
             return result;
         }
 
-        for source in &self.active_sources {
-            if let Some(provider) = self.provider_mut(*source) {
+        for source in self.active_sources.clone() {
+            if let Some(provider) = self.provider_mut(source) {
                 if let Ok(result) = provider.fetch_episode_list(title_id) {
-                    self.active_source = *source;
+                    self.active_source = source;
                     return Ok(result);
                 }
             }
@@ -285,10 +285,10 @@ impl MetadataProvider for MetadataPipeline {
             return result;
         }
 
-        for source in &self.active_sources {
-            if let Some(provider) = self.provider_mut(*source) {
+        for source in self.active_sources.clone() {
+            if let Some(provider) = self.provider_mut(source) {
                 if let Ok(result) = provider.fetch_movie_details(title_id) {
-                    self.active_source = *source;
+                    self.active_source = source;
                     return Ok(result);
                 }
             }
