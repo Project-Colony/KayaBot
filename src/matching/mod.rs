@@ -9,6 +9,14 @@ pub enum MatchStatus {
     Error,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContentGuess {
+    Series,
+    Movie,
+    Ambiguous,
+    Unknown,
+}
+
 #[derive(Debug, Clone)]
 pub enum MatchMetadata {
     Series {
@@ -33,6 +41,31 @@ pub struct MatchResult {
 
 pub fn match_files(files: &[String]) -> Vec<MatchResult> {
     files.iter().map(|file| match_single(file)).collect()
+}
+
+pub fn guess_content_type(results: &[MatchResult]) -> ContentGuess {
+    let mut series_count = 0;
+    let mut movie_count = 0;
+    let mut saw_ambiguous = false;
+
+    for result in results {
+        match result.candidates.as_slice() {
+            [MatchMetadata::Series { .. }] => series_count += 1,
+            [MatchMetadata::Movie { .. }] => movie_count += 1,
+            [] => {}
+            _ => saw_ambiguous = true,
+        }
+    }
+
+    if series_count > 0 && movie_count == 0 && !saw_ambiguous {
+        ContentGuess::Series
+    } else if movie_count > 0 && series_count == 0 && !saw_ambiguous {
+        ContentGuess::Movie
+    } else if series_count > 0 || movie_count > 0 || saw_ambiguous {
+        ContentGuess::Ambiguous
+    } else {
+        ContentGuess::Unknown
+    }
 }
 
 fn match_single(filename: &str) -> MatchResult {
