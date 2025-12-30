@@ -81,23 +81,23 @@ impl Default for RenameApp {
         let mut metadata_provider = MetadataPipeline::new(vec![
             (
                 MetadataSource::TheMovieDb,
-                Box::new(TmdbClient::new(api_config.tmdb_token)),
+                Box::new(TmdbClient::new(api_config.tmdb_token.clone())),
             ),
             (
                 MetadataSource::AniDb,
-                Box::new(AniDbClient::new(api_config.anidb_api_key)),
+                Box::new(AniDbClient::new(api_config.anidb_api_key.clone())),
             ),
             (
                 MetadataSource::TheTvDb,
-                Box::new(TheTvDbClient::new(api_config.tvdb_api_key)),
+                Box::new(TheTvDbClient::new(api_config.tvdb_api_key.clone())),
             ),
             (
                 MetadataSource::TvMaze,
-                Box::new(TvMazeClient::new(api_config.tvmaze_user_agent)),
+                Box::new(TvMazeClient::new(api_config.tvmaze_user_agent.clone())),
             ),
             (
                 MetadataSource::Omdb,
-                Box::new(OmdbClient::new(api_config.omdb_api_key)),
+                Box::new(OmdbClient::new(api_config.omdb_api_key.clone())),
             ),
         ]);
         metadata_provider.set_active_sources(vec![
