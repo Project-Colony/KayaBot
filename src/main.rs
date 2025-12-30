@@ -308,7 +308,7 @@ impl RenameApp {
                             .show(ui, |ui| {
                                 ui.set_min_height(list_height);
                                 ScrollArea::vertical()
-                                    .id_source("list_scroll")
+                                    .id_source((title, "list_scroll"))
                                     .auto_shrink([false, false])
                                     .show(ui, |ui| {
                                         for item in items {
