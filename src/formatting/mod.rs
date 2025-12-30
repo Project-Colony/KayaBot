@@ -90,9 +90,31 @@ fn normalize_title(value: &str) -> String {
     }
 
     let tags = [
-        "vf", "vff", "vfi", "vostfr", "truefrench", "multi", "1080p", "720p", "2160p",
-        "480p", "webrip", "webdl", "web-dl", "bluray", "brrip", "hdrip", "hdtv", "dvdrip",
-        "x264", "x265", "h264", "h265", "aac", "dts", "truehd",
+        "vf",
+        "vff",
+        "vfi",
+        "vostfr",
+        "truefrench",
+        "multi",
+        "1080p",
+        "720p",
+        "2160p",
+        "480p",
+        "webrip",
+        "webdl",
+        "web-dl",
+        "bluray",
+        "brrip",
+        "hdrip",
+        "hdtv",
+        "dvdrip",
+        "x264",
+        "x265",
+        "h264",
+        "h265",
+        "aac",
+        "dts",
+        "truehd",
     ];
 
     buffer

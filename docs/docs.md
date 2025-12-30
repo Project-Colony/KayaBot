@@ -40,6 +40,11 @@ Formats finaux (et fallbacks) :
 - `src/metadata/filebot_like.rs` fournit un provider en mémoire (dataset vide par défaut) et un cache local (`MetadataCache`).
 - `src/metadata/models.rs` définit les types `TitleMatch` et `EpisodeMatch`.
 
+#### Stratégie de sélection des sources
+
+- Séries : TheTVDB en source primaire, TVmaze en fallback si aucune réponse.
+- Films : TheMovieDB (TMDB) en source primaire, OMDb en fallback si aucune réponse.
+
 #### Attributs attendus par source (films / séries)
 
 Les attributs ci-dessous correspondent aux champs utilisés par KayaBot (modèles `TitleMatch` et `EpisodeMatch`).

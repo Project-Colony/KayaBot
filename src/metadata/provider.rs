@@ -1,7 +1,7 @@
 use crate::metadata::error::MetadataError;
 use crate::metadata::models::{EpisodeMatch, TitleMatch};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MetadataSource {
     TheMovieDb,
     AniDb,

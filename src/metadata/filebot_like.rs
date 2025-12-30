@@ -9,6 +9,8 @@ use crate::metadata::provider::{MetadataProvider, MetadataSource};
 pub struct FileBotLikeProvider {
     dataset: HashMap<String, TitleRecord>,
     cache: MetadataCache,
+    primary_source: MetadataSource,
+    secondary_source: Option<MetadataSource>,
     active_source: MetadataSource,
 }
 
@@ -25,15 +27,23 @@ impl FileBotLikeProvider {
         Self {
             dataset,
             cache: MetadataCache::new(),
+            primary_source: MetadataSource::TheMovieDb,
+            secondary_source: None,
             active_source: MetadataSource::TheMovieDb,
         }
     }
 
-    pub fn set_source(&mut self, source: MetadataSource) {
-        if self.active_source != source {
-            self.active_source = source;
+    pub fn set_sources(&mut self, primary: MetadataSource, secondary: Option<MetadataSource>) {
+        if self.primary_source != primary || self.secondary_source != secondary {
+            self.primary_source = primary;
+            self.secondary_source = secondary;
+            self.active_source = primary;
             self.cache.clear();
         }
+    }
+
+    pub fn set_source(&mut self, source: MetadataSource) {
+        self.set_sources(source, None);
     }
 
     pub fn active_source(&self) -> MetadataSource {
@@ -43,10 +53,16 @@ impl FileBotLikeProvider {
     fn normalize_query(query: &str) -> String {
         query.trim().to_lowercase()
     }
-}
 
-impl MetadataProvider for FileBotLikeProvider {
-    fn search_title(&mut self, query: &str) -> Result<Vec<TitleMatch>, MetadataError> {
+    fn should_fallback(error: &MetadataError) -> bool {
+        matches!(error, MetadataError::NotFound(_))
+    }
+
+    fn search_title_for_source(
+        &mut self,
+        query: &str,
+        source: MetadataSource,
+    ) -> Result<Vec<TitleMatch>, MetadataError> {
         let key = Self::normalize_query(query);
         if key.is_empty() {
             return Err(MetadataError::InvalidResponse(
@@ -54,7 +70,7 @@ impl MetadataProvider for FileBotLikeProvider {
             ));
         }
 
-        if let Some(hit) = self.cache.get_title_search(&key) {
+        if let Some(hit) = self.cache.get_title_search(source, &key) {
             return Ok(hit);
         }
 
@@ -66,7 +82,7 @@ impl MetadataProvider for FileBotLikeProvider {
                     name: record.title.clone(),
                     year: record.year,
                     score: 0.92,
-                    source: self.active_source.label().to_string(),
+                    source: source.label().to_string(),
                 });
             }
         }
@@ -77,18 +93,22 @@ impl MetadataProvider for FileBotLikeProvider {
             )));
         }
 
-        self.cache.put_title_search(&key, matches.clone());
+        self.cache.put_title_search(source, &key, matches.clone());
         Ok(matches)
     }
 
-    fn fetch_episode_list(&mut self, title_id: &str) -> Result<Vec<EpisodeMatch>, MetadataError> {
+    fn fetch_episode_list_for_source(
+        &mut self,
+        title_id: &str,
+        source: MetadataSource,
+    ) -> Result<Vec<EpisodeMatch>, MetadataError> {
         if title_id.trim().is_empty() {
             return Err(MetadataError::InvalidResponse(
                 "Title identifier cannot be empty.".to_string(),
             ));
         }
 
-        if let Some(hit) = self.cache.get_episode_list(title_id) {
+        if let Some(hit) = self.cache.get_episode_list(source, title_id) {
             return Ok(hit);
         }
 
@@ -99,7 +119,51 @@ impl MetadataProvider for FileBotLikeProvider {
 
         let episodes = record.episodes.clone();
         self.cache
-            .put_episode_list(&title_id.to_lowercase(), episodes.clone());
+            .put_episode_list(source, &title_id.to_lowercase(), episodes.clone());
         Ok(episodes)
+    }
+}
+
+impl MetadataProvider for FileBotLikeProvider {
+    fn search_title(&mut self, query: &str) -> Result<Vec<TitleMatch>, MetadataError> {
+        let primary = self.primary_source;
+        match self.search_title_for_source(query, primary) {
+            Ok(matches) => {
+                self.active_source = primary;
+                Ok(matches)
+            }
+            Err(err) => {
+                if Self::should_fallback(&err) {
+                    if let Some(secondary) = self.secondary_source {
+                        if secondary != primary {
+                            let fallback = self.search_title_for_source(query, secondary)?;
+                            self.active_source = secondary;
+                            return Ok(fallback);
+                        }
+                    }
+                }
+                Err(err)
+            }
+        }
+    }
+
+    fn fetch_episode_list(&mut self, title_id: &str) -> Result<Vec<EpisodeMatch>, MetadataError> {
+        let primary = self.active_source;
+        match self.fetch_episode_list_for_source(title_id, primary) {
+            Ok(episodes) => Ok(episodes),
+            Err(err) => {
+                if Self::should_fallback(&err) {
+                    if let Some(secondary) = self.secondary_source {
+                        if secondary != primary {
+                            let fallback =
+                                self.fetch_episode_list_for_source(title_id, secondary)?;
+                            self.active_source = secondary;
+                            return Ok(fallback);
+                        }
+                    }
+                }
+                Err(err)
+            }
+        }
     }
 }

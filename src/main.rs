@@ -6,8 +6,7 @@ use eframe::egui::{
     self, Button, Color32, FontId, Frame, Layout, RichText, ScrollArea, Stroke, Vec2,
 };
 use formatting::{
-    DEFAULT_MOVIE_FORMAT, DEFAULT_SERIES_FORMAT, FormatOptions, MovieFormatInput,
-    SeriesFormatInput,
+    DEFAULT_MOVIE_FORMAT, DEFAULT_SERIES_FORMAT, FormatOptions, MovieFormatInput, SeriesFormatInput,
 };
 use metadata::filebot_like::FileBotLikeProvider;
 use metadata::models::{EpisodeMatch, TitleMatch};
@@ -72,7 +71,7 @@ impl Default for RenameApp {
         let match_results = Vec::new();
         let rename_ui_state = RenameUiState::Empty;
         let mut metadata_provider = FileBotLikeProvider::new();
-        metadata_provider.set_source(MetadataSource::TheTvDb);
+        metadata_provider.set_sources(MetadataSource::TheTvDb, Some(MetadataSource::TvMaze));
 
         Self {
             active_left_nav: LeftNav::Rename,
@@ -415,7 +414,8 @@ impl RenameApp {
     fn switch_metadata_source(&mut self, source: MetadataSource, content_type: ContentType) {
         self.active_metadata_source = source;
         self.content_type = content_type;
-        self.metadata_provider.set_source(source);
+        let fallback = self.fallback_source(content_type, source);
+        self.metadata_provider.set_sources(source, fallback);
         self.fetch_status = FetchStatus::Idle;
         self.title_matches.clear();
         self.episode_matches.clear();
@@ -427,6 +427,25 @@ impl RenameApp {
             ContentType::Series => self.preferred_series_source = source,
         }
         self.refresh_rename_ui_state();
+    }
+
+    fn fallback_source(
+        &self,
+        content_type: ContentType,
+        primary: MetadataSource,
+    ) -> Option<MetadataSource> {
+        match content_type {
+            ContentType::Movie => match primary {
+                MetadataSource::TheMovieDb => Some(MetadataSource::Omdb),
+                MetadataSource::Omdb => Some(MetadataSource::TheMovieDb),
+                _ => None,
+            },
+            ContentType::Series => match primary {
+                MetadataSource::TheTvDb => Some(MetadataSource::TvMaze),
+                MetadataSource::TvMaze => Some(MetadataSource::TheTvDb),
+                _ => None,
+            },
+        }
     }
 
     fn center_buttons(&mut self, ui: &mut egui::Ui) {
@@ -494,6 +513,7 @@ impl RenameApp {
         match self.metadata_provider.search_title(query) {
             Ok(matches) => {
                 self.title_matches = matches.clone();
+                self.active_metadata_source = self.metadata_provider.active_source();
                 if let Some(best) = matches.iter().max_by(|a, b| {
                     a.score
                         .partial_cmp(&b.score)
@@ -512,6 +532,7 @@ impl RenameApp {
                 self.title_matches.clear();
                 self.episode_matches.clear();
                 self.selected_title_id = None;
+                self.active_metadata_source = self.metadata_provider.active_source();
                 self.fetch_status = FetchStatus::Error(err.to_string());
             }
         }
@@ -526,9 +547,11 @@ impl RenameApp {
         match self.metadata_provider.fetch_episode_list(&title_id) {
             Ok(episodes) => {
                 self.episode_matches = episodes;
+                self.active_metadata_source = self.metadata_provider.active_source();
             }
             Err(err) => {
                 self.episode_matches.clear();
+                self.active_metadata_source = self.metadata_provider.active_source();
                 self.fetch_status = FetchStatus::Error(err.to_string());
             }
         }
@@ -888,7 +911,11 @@ impl ListItem for NewNameRow {
                     } else {
                         format!("from {original} • {candidate_count} candidate(s)")
                     };
-                    ui.label(RichText::new(detail).color(Color32::from_gray(120)).size(10.0));
+                    ui.label(
+                        RichText::new(detail)
+                            .color(Color32::from_gray(120))
+                            .size(10.0),
+                    );
                 }
             });
         } else {
