@@ -13,9 +13,8 @@ impl Default for FormatOptions {
     }
 }
 
-pub const DEFAULT_SERIES_FORMAT: &str =
-    "~/Media/TV Shows/{Series}/Season {season:02}/{Series} - S{season:02}E{episode:02} - {title}";
-pub const DEFAULT_MOVIE_FORMAT: &str = "~/Media/Movies/{title} ({year})/{title} ({year})";
+pub const DEFAULT_SERIES_FORMAT: &str = "{Series Title} {Season}x{Episode} - {Episode Title}";
+pub const DEFAULT_MOVIE_FORMAT: &str = "{Title} ({Year})";
 
 pub struct SeriesFormatInput<'a> {
     pub series: &'a str,
@@ -31,17 +30,15 @@ pub struct MovieFormatInput<'a> {
 
 pub fn format_series_name(input: SeriesFormatInput<'_>, options: FormatOptions) -> String {
     let series = sanitize_component(input.series);
-    let mut name = format!(
-        "~/Media/TV Shows/{series}/Season {:02}/{series} - S{:02}E{:02}",
-        input.season, input.season, input.episode
-    );
+    let mut name = format!("{series} {}x{}", input.season, input.episode);
 
     if options.include_episode_title {
-        if let Some(title) = input.title {
-            let cleaned = sanitize_component(title);
-            name.push_str(&format!(" - {cleaned}"));
-        } else {
-            name.push_str(&format!(" - Episode {:02}", input.episode));
+        let cleaned = input
+            .title
+            .map(sanitize_component)
+            .filter(|value| !value.trim().is_empty());
+        if let Some(title) = cleaned {
+            name.push_str(&format!(" - {title}"));
         }
     }
 
@@ -50,19 +47,24 @@ pub fn format_series_name(input: SeriesFormatInput<'_>, options: FormatOptions) 
 
 pub fn format_movie_name(input: MovieFormatInput<'_>, options: FormatOptions) -> String {
     let title = sanitize_component(input.title);
-    let mut base = title.clone();
+    let mut base = if title.trim().is_empty() {
+        "Unknown Title".to_string()
+    } else {
+        title
+    };
     if options.include_year {
         if let Some(year) = input.year {
             base = format!("{base} ({year})");
         }
     }
 
-    format!("~/Media/Movies/{base}/{base}")
+    base
 }
 
 pub fn sanitize_component(value: &str) -> String {
-    let mut cleaned = String::with_capacity(value.len());
-    for ch in value.chars() {
+    let normalized = normalize_title(value);
+    let mut cleaned = String::with_capacity(normalized.len());
+    for ch in normalized.chars() {
         if matches!(
             ch,
             '/' | '\\' | '?' | '%' | '*' | ':' | '|' | '"' | '<' | '>'
@@ -75,4 +77,57 @@ pub fn sanitize_component(value: &str) -> String {
         }
     }
     cleaned.trim().to_string()
+}
+
+fn normalize_title(value: &str) -> String {
+    let mut buffer = String::with_capacity(value.len());
+    for ch in value.chars() {
+        if ch.is_alphanumeric() {
+            buffer.push(ch);
+        } else {
+            buffer.push(' ');
+        }
+    }
+
+    let tags = [
+        "vf", "vff", "vfi", "vostfr", "truefrench", "multi", "1080p", "720p", "2160p",
+        "480p", "webrip", "webdl", "web-dl", "bluray", "brrip", "hdrip", "hdtv", "dvdrip",
+        "x264", "x265", "h264", "h265", "aac", "dts", "truehd",
+    ];
+
+    buffer
+        .split_whitespace()
+        .filter(|token| !is_tag_token(token, &tags))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn is_tag_token(token: &str, tags: &[&str]) -> bool {
+    let lower = token.to_lowercase();
+    if tags.contains(&lower.as_str()) {
+        return true;
+    }
+    let bytes = lower.as_bytes();
+    if bytes.len() >= 4 && bytes[0] == b's' && bytes.contains(&b'e') {
+        let mut has_digit = false;
+        for b in bytes {
+            if b.is_ascii_digit() {
+                has_digit = true;
+                break;
+            }
+        }
+        if has_digit {
+            return true;
+        }
+    }
+    if let Some((left, right)) = lower.split_once('x') {
+        if !left.is_empty()
+            && !right.is_empty()
+            && left.chars().all(|c| c.is_ascii_digit())
+            && right.chars().all(|c| c.is_ascii_digit())
+        {
+            return true;
+        }
+    }
+    false
 }
