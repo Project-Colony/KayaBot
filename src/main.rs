@@ -547,9 +547,12 @@ impl RenameApp {
         ui.add_space(12.0);
         ui.label(RichText::new("API configuration").strong());
         ui.label(
-            RichText::new("Keys are loaded from ~/.kayabot/config.toml or environment variables.")
-                .size(11.0)
-                .color(palette.subtext0),
+            RichText::new(
+                "Keys are loaded from config.toml in the KayaBot config directory or \
+environment variables.",
+            )
+            .size(11.0)
+            .color(palette.subtext0),
         );
         if let Some(path) = ApiConfig::config_path() {
             ui.label(
@@ -1532,7 +1535,7 @@ impl ApiConfig {
     }
 
     fn config_path() -> Option<PathBuf> {
-        dirs::home_dir().map(|home| home.join(".kayabot").join("config.toml"))
+        config_root().map(|root| root.join("config.toml"))
     }
 
     fn tmdb_configured(&self) -> bool {
@@ -1905,8 +1908,12 @@ impl UserPreferences {
     }
 
     fn preferences_path() -> Option<PathBuf> {
-        dirs::home_dir().map(|home| home.join(".kayabot").join("preferences.toml"))
+        config_root().map(|root| root.join("preferences.toml"))
     }
+}
+
+fn config_root() -> Option<PathBuf> {
+    dirs::config_dir().map(|base| base.join("Colony").join("KayaBot"))
 }
 
 trait ListItem {
