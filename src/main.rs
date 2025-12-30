@@ -167,34 +167,39 @@ impl RenameApp {
                 ui.separator();
                 ui.add_space(8.0);
 
-                ui.horizontal(|ui| {
-                    let left_width = (ui.available_width() - 120.0) * 0.5;
-                    let right_width = left_width;
+                let panel_height = ui.available_height();
+                ui.allocate_ui_with_layout(
+                    Vec2::new(ui.available_width(), panel_height),
+                    Layout::left_to_right(egui::Align::Min),
+                    |ui| {
+                        let left_width = (ui.available_width() - 120.0) * 0.5;
+                        let right_width = left_width;
 
-                    self.list_panel(ui, "Original Files", left_width, &self.original_files, |ui| {
-                        ui.horizontal(|ui| {
-                            ui.add_sized(Vec2::new(32.0, 26.0), Button::new("⬇"));
-                            ui.add_sized(Vec2::new(32.0, 26.0), Button::new("⬆"));
-                            ui.add_sized(Vec2::new(32.0, 26.0), Button::new("❌"));
-                            ui.add_sized(Vec2::new(70.0, 26.0), Button::new("📂 Load"));
-                            ui.add_sized(Vec2::new(32.0, 26.0), Button::new("🔄"));
+                        self.list_panel(ui, "Original Files", left_width, &self.original_files, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.add_sized(Vec2::new(32.0, 26.0), Button::new("⬇"));
+                                ui.add_sized(Vec2::new(32.0, 26.0), Button::new("⬆"));
+                                ui.add_sized(Vec2::new(32.0, 26.0), Button::new("❌"));
+                                ui.add_sized(Vec2::new(70.0, 26.0), Button::new("📂 Load"));
+                                ui.add_sized(Vec2::new(32.0, 26.0), Button::new("🔄"));
+                            });
                         });
-                    });
 
-                    ui.add_space(10.0);
-                    self.center_buttons(ui);
-                    ui.add_space(10.0);
+                        ui.add_space(10.0);
+                        self.center_buttons(ui);
+                        ui.add_space(10.0);
 
-                    self.list_panel(ui, "New Names", right_width, &self.new_names, |ui| {
-                        ui.horizontal(|ui| {
-                            ui.add_sized(Vec2::new(32.0, 26.0), Button::new("⬇"));
-                            ui.add_sized(Vec2::new(32.0, 26.0), Button::new("⬆"));
-                            ui.add_sized(Vec2::new(70.0, 26.0), Button::new("📂 Load"));
-                            ui.add_sized(Vec2::new(92.0, 26.0), Button::new("Fetch Data"));
-                            ui.add_sized(Vec2::new(32.0, 26.0), Button::new("🔧"));
+                        self.list_panel(ui, "New Names", right_width, &self.new_names, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.add_sized(Vec2::new(32.0, 26.0), Button::new("⬇"));
+                                ui.add_sized(Vec2::new(32.0, 26.0), Button::new("⬆"));
+                                ui.add_sized(Vec2::new(70.0, 26.0), Button::new("📂 Load"));
+                                ui.add_sized(Vec2::new(92.0, 26.0), Button::new("Fetch Data"));
+                                ui.add_sized(Vec2::new(32.0, 26.0), Button::new("🔧"));
+                            });
                         });
-                    });
-                });
+                    },
+                );
             },
         );
     }
