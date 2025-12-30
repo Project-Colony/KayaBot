@@ -312,7 +312,9 @@ impl RenameApp {
             Layout::top_down(egui::Align::Min),
             |ui| {
                 ui.push_id(title, |ui| {
+                    let available_height = ui.available_height();
                     panel_frame.show(ui, |ui| {
+                        ui.set_min_height(available_height);
                         ui.label(RichText::new(title).size(14.0));
                         ui.add_space(4.0);
 
