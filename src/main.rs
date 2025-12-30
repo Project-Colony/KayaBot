@@ -8,9 +8,13 @@ use eframe::egui::{
 use formatting::{
     DEFAULT_MOVIE_FORMAT, DEFAULT_SERIES_FORMAT, FormatOptions, MovieFormatInput, SeriesFormatInput,
 };
-use metadata::filebot_like::FileBotLikeProvider;
+use metadata::aggregate::MetadataPipeline;
 use metadata::models::{EpisodeMatch, TitleMatch};
 use metadata::provider::{MetadataProvider, MetadataSource};
+use metadata::providers::{
+    anidb::AniDbClient, omdb::OmdbClient, thetvdb::TheTvDbClient, tmdb::TmdbClient,
+    tvmaze::TvMazeClient,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LeftNav {
@@ -57,7 +61,7 @@ struct RenameApp {
     show_match_picker: bool,
     rename_feedback: Option<(usize, usize)>,
     format_options: FormatOptions,
-    metadata_provider: FileBotLikeProvider,
+    metadata_provider: MetadataPipeline,
     rename_ui_state: RenameUiState,
     active_metadata_source: MetadataSource,
     preferred_movie_source: MetadataSource,
@@ -70,8 +74,18 @@ impl Default for RenameApp {
         let original_files = Vec::new();
         let match_results = Vec::new();
         let rename_ui_state = RenameUiState::Empty;
-        let mut metadata_provider = FileBotLikeProvider::new();
-        metadata_provider.set_sources(MetadataSource::TheTvDb, Some(MetadataSource::TvMaze));
+        let mut metadata_provider = MetadataPipeline::new(vec![
+            (MetadataSource::TheMovieDb, Box::new(TmdbClient::new(""))),
+            (MetadataSource::AniDb, Box::new(AniDbClient::new(""))),
+            (MetadataSource::TheTvDb, Box::new(TheTvDbClient::new(""))),
+            (MetadataSource::TvMaze, Box::new(TvMazeClient::new(""))),
+            (MetadataSource::Omdb, Box::new(OmdbClient::new(""))),
+        ]);
+        metadata_provider.set_active_sources(vec![
+            MetadataSource::TheTvDb,
+            MetadataSource::TvMaze,
+            MetadataSource::AniDb,
+        ]);
 
         Self {
             active_left_nav: LeftNav::Rename,
@@ -414,8 +428,9 @@ impl RenameApp {
     fn switch_metadata_source(&mut self, source: MetadataSource, content_type: ContentType) {
         self.active_metadata_source = source;
         self.content_type = content_type;
-        let fallback = self.fallback_source(content_type, source);
-        self.metadata_provider.set_sources(source, fallback);
+        let mut sources = vec![source];
+        sources.extend(self.fallback_sources(content_type, source));
+        self.metadata_provider.set_active_sources(sources);
         self.fetch_status = FetchStatus::Idle;
         self.title_matches.clear();
         self.episode_matches.clear();
@@ -429,21 +444,26 @@ impl RenameApp {
         self.refresh_rename_ui_state();
     }
 
-    fn fallback_source(
+    fn fallback_sources(
         &self,
         content_type: ContentType,
         primary: MetadataSource,
-    ) -> Option<MetadataSource> {
+    ) -> Vec<MetadataSource> {
         match content_type {
             ContentType::Movie => match primary {
-                MetadataSource::TheMovieDb => Some(MetadataSource::Omdb),
-                MetadataSource::Omdb => Some(MetadataSource::TheMovieDb),
-                _ => None,
+                MetadataSource::TheMovieDb => vec![MetadataSource::Omdb],
+                MetadataSource::Omdb => vec![MetadataSource::TheMovieDb],
+                _ => vec![MetadataSource::TheMovieDb, MetadataSource::Omdb],
             },
             ContentType::Series => match primary {
-                MetadataSource::TheTvDb => Some(MetadataSource::TvMaze),
-                MetadataSource::TvMaze => Some(MetadataSource::TheTvDb),
-                _ => None,
+                MetadataSource::TheTvDb => vec![MetadataSource::TvMaze, MetadataSource::AniDb],
+                MetadataSource::TvMaze => vec![MetadataSource::TheTvDb, MetadataSource::AniDb],
+                MetadataSource::AniDb => vec![MetadataSource::TheTvDb, MetadataSource::TvMaze],
+                _ => vec![
+                    MetadataSource::TheTvDb,
+                    MetadataSource::TvMaze,
+                    MetadataSource::AniDb,
+                ],
             },
         }
     }
