@@ -28,4 +28,9 @@ impl MetadataCache {
     pub fn put_episode_list(&mut self, title_id: &str, episodes: Vec<EpisodeMatch>) {
         self.episode_lists.insert(title_id.to_string(), episodes);
     }
+
+    pub fn clear(&mut self) {
+        self.title_searches.clear();
+        self.episode_lists.clear();
+    }
 }
