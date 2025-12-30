@@ -99,6 +99,7 @@ impl Default for RenameApp {
 
 impl eframe::App for RenameApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.handle_dropped_files(ctx);
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.horizontal(|ui| {
                 self.left_sidebar(ui);
@@ -110,6 +111,38 @@ impl eframe::App for RenameApp {
 }
 
 impl RenameApp {
+    fn handle_dropped_files(&mut self, ctx: &egui::Context) {
+        let dropped_files = ctx.input(|input| input.raw.dropped_files.clone());
+        if dropped_files.is_empty() {
+            return;
+        }
+
+        let mut added = false;
+        for dropped in dropped_files {
+            if let Some(path) = dropped.path {
+                if !path.is_file() {
+                    continue;
+                }
+                let path_string = path.display().to_string();
+                if !self.original_files.contains(&path_string) {
+                    self.original_files.push(path_string);
+                    added = true;
+                }
+            } else if let Some(name) = dropped.name {
+                if !self.original_files.contains(&name) {
+                    self.original_files.push(name);
+                    added = true;
+                }
+            }
+        }
+
+        if added {
+            self.match_results = matching::match_files(&self.original_files);
+            self.apply_content_detection();
+            self.rename_feedback = None;
+            self.refresh_rename_ui_state();
+        }
+    }
     fn left_sidebar(&mut self, ui: &mut egui::Ui) {
         let sidebar_width = 110.0;
         let frame = Frame::none()
