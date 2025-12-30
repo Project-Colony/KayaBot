@@ -28,6 +28,15 @@ enum LeftNav {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SettingsSection {
+    Program,
+    Language,
+    Appearance,
+    Experience,
+    Utilities,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ContentType {
     Movie,
     Series,
@@ -70,6 +79,8 @@ struct RenameApp {
     detection_notice: Option<String>,
     force_metadata_source: bool,
     api_config: ApiConfig,
+    active_settings_section: SettingsSection,
+    user_preferences: UserPreferences,
 }
 
 impl Default for RenameApp {
@@ -127,6 +138,8 @@ impl Default for RenameApp {
             detection_notice: None,
             force_metadata_source: false,
             api_config,
+            active_settings_section: SettingsSection::Program,
+            user_preferences: UserPreferences::default(),
         }
     }
 }
@@ -369,30 +382,228 @@ impl RenameApp {
         ui.separator();
         ui.add_space(8.0);
 
-        ui.label("Future configuration options will live here.");
-        ui.add_space(10.0);
+        ui.horizontal(|ui| {
+            let menu_width = 200.0;
+            let content_width = ui.available_width() - menu_width - 12.0;
+            let menu_frame = Frame::none()
+                .fill(Color32::from_gray(245))
+                .stroke(Stroke::new(1.0, Color32::from_gray(200)))
+                .rounding(egui::Rounding::same(6.0))
+                .inner_margin(egui::Margin::symmetric(8.0, 8.0));
 
-        ui.group(|ui| {
-            ui.label(RichText::new("API configuration").strong());
+            menu_frame.show(ui, |ui| {
+                ui.set_min_width(menu_width);
+                ui.label(RichText::new("Menu").strong());
+                ui.add_space(6.0);
+                self.settings_section_button(ui, SettingsSection::Program, "🧰", "Program");
+                self.settings_section_button(ui, SettingsSection::Language, "🌍", "Language");
+                self.settings_section_button(ui, SettingsSection::Appearance, "🎨", "Appearance");
+                self.settings_section_button(ui, SettingsSection::Experience, "✨", "Experience");
+                self.settings_section_button(ui, SettingsSection::Utilities, "🛠️", "Utilities");
+            });
+
+            ui.add_space(12.0);
+
+            Frame::none()
+                .fill(Color32::from_gray(250))
+                .stroke(Stroke::new(1.0, Color32::from_gray(200)))
+                .rounding(egui::Rounding::same(6.0))
+                .inner_margin(egui::Margin::symmetric(12.0, 12.0))
+                .show(ui, |ui| {
+                    ui.set_min_width(content_width);
+                    ScrollArea::vertical().show(ui, |ui| match self.active_settings_section {
+                        SettingsSection::Program => self.settings_program(ui),
+                        SettingsSection::Language => self.settings_language(ui),
+                        SettingsSection::Appearance => self.settings_appearance(ui),
+                        SettingsSection::Experience => self.settings_experience(ui),
+                        SettingsSection::Utilities => self.settings_utilities(ui),
+                    });
+                });
+        });
+    }
+
+    fn settings_section_button(
+        &mut self,
+        ui: &mut egui::Ui,
+        section: SettingsSection,
+        icon: &str,
+        label: &str,
+    ) {
+        let is_active = self.active_settings_section == section;
+        let fill = if is_active {
+            Color32::from_rgb(215, 230, 250)
+        } else {
+            Color32::from_gray(248)
+        };
+        let stroke = if is_active {
+            Stroke::new(1.5, Color32::from_rgb(90, 130, 200))
+        } else {
+            Stroke::new(1.0, Color32::from_gray(210))
+        };
+        let response = Frame::none()
+            .fill(fill)
+            .stroke(stroke)
+            .rounding(egui::Rounding::same(6.0))
+            .inner_margin(egui::Margin::symmetric(6.0, 6.0))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(icon);
+                    ui.label(label);
+                })
+                .response
+            })
+            .response;
+        if response.clicked() {
+            self.active_settings_section = section;
+        }
+    }
+
+    fn settings_program(&mut self, ui: &mut egui::Ui) {
+        ui.label(RichText::new("Program").font(FontId::proportional(18.0)));
+        ui.add_space(6.0);
+        ui.checkbox(
+            &mut self.user_preferences.open_last_session,
+            "Restore last session on launch",
+        );
+        ui.checkbox(
+            &mut self.user_preferences.auto_save_queue,
+            "Auto-save rename queue",
+        );
+        ui.checkbox(
+            &mut self.user_preferences.check_updates_on_launch,
+            "Check for updates on launch",
+        );
+        ui.checkbox(
+            &mut self.user_preferences.confirm_before_rename,
+            "Ask for confirmation before renaming",
+        );
+        ui.add_space(12.0);
+        ui.label(RichText::new("API configuration").strong());
+        ui.label(
+            RichText::new("Keys are loaded from ~/.kayabot/config.toml or environment variables.")
+                .size(11.0)
+                .color(Color32::from_gray(120)),
+        );
+        if let Some(path) = ApiConfig::config_path() {
             ui.label(
-                RichText::new("Keys are loaded from ~/.kayabot/config.toml or environment variables.")
+                RichText::new(format!("Config path: {}", path.display()))
                     .size(11.0)
                     .color(Color32::from_gray(120)),
             );
-            if let Some(path) = ApiConfig::config_path() {
-                ui.label(
-                    RichText::new(format!("Config path: {}", path.display()))
-                        .size(11.0)
-                        .color(Color32::from_gray(120)),
-                );
-            }
-            ui.add_space(6.0);
-            self.settings_status_row(ui, "TMDB", self.api_config.tmdb_configured());
-            self.settings_status_row(ui, "TVDB", self.api_config.tvdb_configured());
-            self.settings_status_row(ui, "OMDB", self.api_config.omdb_configured());
-            self.settings_status_row(ui, "AniDB", self.api_config.anidb_configured());
-            self.settings_status_row(ui, "TVMaze", self.api_config.tvmaze_configured());
-        });
+        }
+        ui.add_space(6.0);
+        self.settings_status_row(ui, "TMDB", self.api_config.tmdb_configured());
+        self.settings_status_row(ui, "TVDB", self.api_config.tvdb_configured());
+        self.settings_status_row(ui, "OMDB", self.api_config.omdb_configured());
+        self.settings_status_row(ui, "AniDB", self.api_config.anidb_configured());
+        self.settings_status_row(ui, "TVMaze", self.api_config.tvmaze_configured());
+    }
+
+    fn settings_language(&mut self, ui: &mut egui::Ui) {
+        ui.label(RichText::new("Language").font(FontId::proportional(18.0)));
+        ui.add_space(6.0);
+        egui::ComboBox::from_id_source("settings_language")
+            .selected_text(self.user_preferences.language.label())
+            .show_ui(ui, |ui| {
+                for language in LanguageChoice::all() {
+                    ui.selectable_value(&mut self.user_preferences.language, language, language.label());
+                }
+            });
+        egui::ComboBox::from_id_source("settings_region")
+            .selected_text(self.user_preferences.region.label())
+            .show_ui(ui, |ui| {
+                for region in RegionChoice::all() {
+                    ui.selectable_value(&mut self.user_preferences.region, region, region.label());
+                }
+            });
+        egui::ComboBox::from_id_source("settings_date_format")
+            .selected_text(self.user_preferences.date_format.label())
+            .show_ui(ui, |ui| {
+                for format in DateFormat::all() {
+                    ui.selectable_value(
+                        &mut self.user_preferences.date_format,
+                        format,
+                        format.label(),
+                    );
+                }
+            });
+    }
+
+    fn settings_appearance(&mut self, ui: &mut egui::Ui) {
+        ui.label(RichText::new("Appearance").font(FontId::proportional(18.0)));
+        ui.add_space(6.0);
+        egui::ComboBox::from_id_source("settings_theme")
+            .selected_text(self.user_preferences.theme.label())
+            .show_ui(ui, |ui| {
+                for theme in ThemeChoice::all() {
+                    ui.selectable_value(&mut self.user_preferences.theme, theme, theme.label());
+                }
+            });
+        egui::ComboBox::from_id_source("settings_density")
+            .selected_text(self.user_preferences.density.label())
+            .show_ui(ui, |ui| {
+                for density in DensityChoice::all() {
+                    ui.selectable_value(
+                        &mut self.user_preferences.density,
+                        density,
+                        density.label(),
+                    );
+                }
+            });
+        ui.checkbox(
+            &mut self.user_preferences.show_section_headers,
+            "Show section headers",
+        );
+        ui.checkbox(
+            &mut self.user_preferences.animate_transitions,
+            "Animate transitions",
+        );
+    }
+
+    fn settings_experience(&mut self, ui: &mut egui::Ui) {
+        ui.label(RichText::new("Experience").font(FontId::proportional(18.0)));
+        ui.add_space(6.0);
+        ui.checkbox(
+            &mut self.user_preferences.show_tips,
+            "Show tips and onboarding hints",
+        );
+        ui.checkbox(
+            &mut self.user_preferences.enable_sound_cues,
+            "Enable subtle sound cues",
+        );
+        ui.checkbox(
+            &mut self.user_preferences.show_status_toasts,
+            "Show status notifications",
+        );
+        ui.checkbox(
+            &mut self.user_preferences.highlight_matches,
+            "Highlight confident matches",
+        );
+    }
+
+    fn settings_utilities(&mut self, ui: &mut egui::Ui) {
+        ui.label(RichText::new("Utilities").font(FontId::proportional(18.0)));
+        ui.add_space(6.0);
+        ui.checkbox(
+            &mut self.user_preferences.enable_quick_actions,
+            "Enable quick actions toolbar",
+        );
+        ui.checkbox(
+            &mut self.user_preferences.confirm_before_clearing,
+            "Confirm before clearing lists",
+        );
+        ui.checkbox(
+            &mut self.user_preferences.copy_results_to_clipboard,
+            "Copy results to clipboard after rename",
+        );
+        ui.checkbox(
+            &mut self.user_preferences.keep_logs,
+            "Keep local activity logs",
+        );
+        ui.add_space(8.0);
+        if ui.button("Reset preferences to defaults").clicked() {
+            self.user_preferences = UserPreferences::default();
+        }
     }
 
     fn settings_status_row(&self, ui: &mut egui::Ui, label: &str, configured: bool) {
@@ -1221,6 +1432,185 @@ impl ConfigFile {
         let path = ApiConfig::config_path()?;
         let contents = fs::read_to_string(path).ok()?;
         toml::from_str(&contents).ok()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LanguageChoice {
+    System,
+    English,
+    French,
+    Spanish,
+}
+
+impl LanguageChoice {
+    fn label(self) -> &'static str {
+        match self {
+            LanguageChoice::System => "System default",
+            LanguageChoice::English => "English",
+            LanguageChoice::French => "Français",
+            LanguageChoice::Spanish => "Español",
+        }
+    }
+
+    fn all() -> [Self; 4] {
+        [
+            LanguageChoice::System,
+            LanguageChoice::English,
+            LanguageChoice::French,
+            LanguageChoice::Spanish,
+        ]
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RegionChoice {
+    Auto,
+    France,
+    UnitedStates,
+    Japan,
+}
+
+impl RegionChoice {
+    fn label(self) -> &'static str {
+        match self {
+            RegionChoice::Auto => "Auto",
+            RegionChoice::France => "France",
+            RegionChoice::UnitedStates => "United States",
+            RegionChoice::Japan => "Japan",
+        }
+    }
+
+    fn all() -> [Self; 4] {
+        [
+            RegionChoice::Auto,
+            RegionChoice::France,
+            RegionChoice::UnitedStates,
+            RegionChoice::Japan,
+        ]
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DateFormat {
+    System,
+    DdMmYyyy,
+    MmDdYyyy,
+    YyyyMmDd,
+}
+
+impl DateFormat {
+    fn label(self) -> &'static str {
+        match self {
+            DateFormat::System => "System default",
+            DateFormat::DdMmYyyy => "DD/MM/YYYY",
+            DateFormat::MmDdYyyy => "MM/DD/YYYY",
+            DateFormat::YyyyMmDd => "YYYY-MM-DD",
+        }
+    }
+
+    fn all() -> [Self; 4] {
+        [
+            DateFormat::System,
+            DateFormat::DdMmYyyy,
+            DateFormat::MmDdYyyy,
+            DateFormat::YyyyMmDd,
+        ]
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ThemeChoice {
+    System,
+    Light,
+    Dark,
+}
+
+impl ThemeChoice {
+    fn label(self) -> &'static str {
+        match self {
+            ThemeChoice::System => "System",
+            ThemeChoice::Light => "Light",
+            ThemeChoice::Dark => "Dark",
+        }
+    }
+
+    fn all() -> [Self; 3] {
+        [ThemeChoice::System, ThemeChoice::Light, ThemeChoice::Dark]
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DensityChoice {
+    Compact,
+    Comfortable,
+    Spacious,
+}
+
+impl DensityChoice {
+    fn label(self) -> &'static str {
+        match self {
+            DensityChoice::Compact => "Compact",
+            DensityChoice::Comfortable => "Comfortable",
+            DensityChoice::Spacious => "Spacious",
+        }
+    }
+
+    fn all() -> [Self; 3] {
+        [
+            DensityChoice::Compact,
+            DensityChoice::Comfortable,
+            DensityChoice::Spacious,
+        ]
+    }
+}
+
+#[derive(Debug, Clone)]
+struct UserPreferences {
+    open_last_session: bool,
+    auto_save_queue: bool,
+    check_updates_on_launch: bool,
+    confirm_before_rename: bool,
+    language: LanguageChoice,
+    region: RegionChoice,
+    date_format: DateFormat,
+    theme: ThemeChoice,
+    density: DensityChoice,
+    show_section_headers: bool,
+    animate_transitions: bool,
+    show_tips: bool,
+    enable_sound_cues: bool,
+    show_status_toasts: bool,
+    highlight_matches: bool,
+    enable_quick_actions: bool,
+    confirm_before_clearing: bool,
+    copy_results_to_clipboard: bool,
+    keep_logs: bool,
+}
+
+impl Default for UserPreferences {
+    fn default() -> Self {
+        Self {
+            open_last_session: true,
+            auto_save_queue: true,
+            check_updates_on_launch: true,
+            confirm_before_rename: true,
+            language: LanguageChoice::System,
+            region: RegionChoice::Auto,
+            date_format: DateFormat::System,
+            theme: ThemeChoice::System,
+            density: DensityChoice::Comfortable,
+            show_section_headers: true,
+            animate_transitions: true,
+            show_tips: true,
+            enable_sound_cues: false,
+            show_status_toasts: true,
+            highlight_matches: true,
+            enable_quick_actions: true,
+            confirm_before_clearing: true,
+            copy_results_to_clipboard: false,
+            keep_logs: true,
+        }
     }
 }
 
