@@ -122,7 +122,8 @@ impl MetadataProvider for FileBotLikeProvider {
             .ok_or_else(|| MetadataError::NotFound(format!("No title id '{title_id}'.")))?;
 
         let episodes = record.episodes.clone();
-        self.cache.put_episode_list(&title_id.to_lowercase(), episodes.clone());
+        self.cache
+            .put_episode_list(&title_id.to_lowercase(), episodes.clone());
         Ok(episodes)
     }
 }
