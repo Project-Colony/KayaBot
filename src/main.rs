@@ -213,32 +213,35 @@ impl RenameApp {
             Vec2::new(width, ui.available_height()),
             Layout::top_down(egui::Align::Min),
             |ui| {
-                panel_frame.show(ui, |ui| {
-                    ui.label(RichText::new(title).size(14.0));
-                    ui.add_space(4.0);
+                ui.push_id(title, |ui| {
+                    panel_frame.show(ui, |ui| {
+                        ui.label(RichText::new(title).size(14.0));
+                        ui.add_space(4.0);
 
-                    let remaining = ui.available_height();
-                    let toolbar_height = 34.0;
-                    let list_height = (remaining - toolbar_height).max(120.0);
-                    Frame::none()
-                        .stroke(Stroke::new(1.0, Color32::from_gray(180)))
-                        .fill(Color32::WHITE)
-                        .rounding(egui::Rounding::same(2.0))
-                        .show(ui, |ui| {
-                            ui.set_min_height(list_height);
-                            ScrollArea::vertical()
-                                .auto_shrink([false, false])
-                                .show(ui, |ui| {
-                                    for item in items {
-                                        ui.label(item);
-                                    }
-                                });
+                        let remaining = ui.available_height();
+                        let toolbar_height = 34.0;
+                        let list_height = (remaining - toolbar_height).max(120.0);
+                        Frame::none()
+                            .stroke(Stroke::new(1.0, Color32::from_gray(180)))
+                            .fill(Color32::WHITE)
+                            .rounding(egui::Rounding::same(2.0))
+                            .show(ui, |ui| {
+                                ui.set_min_height(list_height);
+                                ScrollArea::vertical()
+                                    .id_source("list_scroll")
+                                    .auto_shrink([false, false])
+                                    .show(ui, |ui| {
+                                        for item in items {
+                                            ui.label(item);
+                                        }
+                                    });
+                            });
+
+                        ui.add_space(8.0);
+                        ui.with_layout(Layout::left_to_right(egui::Align::Center), |ui| {
+                            ui.set_min_height(toolbar_height);
+                            toolbar(ui);
                         });
-
-                    ui.add_space(8.0);
-                    ui.with_layout(Layout::left_to_right(egui::Align::Center), |ui| {
-                        ui.set_min_height(toolbar_height);
-                        toolbar(ui);
                     });
                 });
             },
