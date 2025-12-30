@@ -45,21 +45,47 @@ impl AniDbClient {
     }
 
     fn normalize_title(&self, title: AniDbTitle) -> TitleMatch {
+        let source_score = title.rating;
+        let source_trust = 0.7;
+        let global_score = source_score * source_trust;
         TitleMatch {
             id: title.id.to_string(),
             name: title.title,
             year: title.year,
-            score: title.rating,
+            source_score,
+            source_trust,
+            global_score,
             source: "AniDB".to_string(),
+            extras: crate::metadata::models::MetadataExtras {
+                external_ids: crate::metadata::models::ExternalIds {
+                    anidb: Some(title.id.to_string()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
         }
     }
 
     fn normalize_episode(&self, episode: AniDbEpisode) -> EpisodeMatch {
+        let source_score = 1.0;
+        let source_trust = 0.7;
+        let global_score = source_score * source_trust;
         EpisodeMatch {
             id: episode.id.to_string(),
             season: 1,
             episode: episode.number,
             title: episode.title,
+            source_score,
+            source_trust,
+            global_score,
+            source: "AniDB".to_string(),
+            extras: crate::metadata::models::MetadataExtras {
+                external_ids: crate::metadata::models::ExternalIds {
+                    anidb: Some(episode.id.to_string()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
         }
     }
 

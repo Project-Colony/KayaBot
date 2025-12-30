@@ -21,12 +21,16 @@ pub enum ContentGuess {
 pub enum MatchMetadata {
     Series {
         title: Option<String>,
+    },
+    Episode {
+        series_title: Option<String>,
         season: u32,
         episode: u32,
+        episode_title: Option<String>,
     },
     Movie {
         title: Option<String>,
-        year: u32,
+        year: Option<u32>,
     },
 }
 
@@ -50,7 +54,7 @@ pub fn guess_content_type(results: &[MatchResult]) -> ContentGuess {
 
     for result in results {
         match result.candidates.as_slice() {
-            [MatchMetadata::Series { .. }] => series_count += 1,
+            [MatchMetadata::Series { .. }] | [MatchMetadata::Episode { .. }] => series_count += 1,
             [MatchMetadata::Movie { .. }] => movie_count += 1,
             [] => {}
             _ => saw_ambiguous = true,
@@ -73,18 +77,27 @@ fn match_single(filename: &str) -> MatchResult {
     let mut candidates = Vec::new();
 
     if let (Some(season), Some(episode)) = (parsed.season, parsed.episode) {
-        candidates.push(MatchMetadata::Series {
-            title: parsed.title.clone(),
+        candidates.push(MatchMetadata::Episode {
+            series_title: parsed.title.clone(),
             season,
             episode,
+            episode_title: None,
         });
     }
 
     if let Some(year) = parsed.year {
         candidates.push(MatchMetadata::Movie {
             title: parsed.title.clone(),
-            year,
+            year: Some(year),
         });
+    }
+
+    if parsed.season.is_none() && parsed.episode.is_none() && parsed.year.is_none() {
+        if parsed.title.is_some() {
+            candidates.push(MatchMetadata::Series {
+                title: parsed.title.clone(),
+            });
+        }
     }
 
     let metadata = candidates.first().cloned();
@@ -98,9 +111,15 @@ fn match_single(filename: &str) -> MatchResult {
         MatchStatus::Error
     } else if candidates.len() > 1 || parsed.used_numeric_heuristic {
         MatchStatus::Ambiguous
-    } else if matches!(metadata, Some(MatchMetadata::Series { title: None, .. }))
-        || matches!(metadata, Some(MatchMetadata::Movie { title: None, .. }))
-    {
+    } else if matches!(
+        metadata,
+        Some(MatchMetadata::Series { title: None, .. })
+            | Some(MatchMetadata::Episode {
+                series_title: None,
+                ..
+            })
+            | Some(MatchMetadata::Movie { title: None, .. })
+    ) {
         MatchStatus::Ambiguous
     } else {
         MatchStatus::Ok

@@ -56,6 +56,9 @@ impl TmdbClient {
     }
 
     fn normalize_title(&self, title: TmdbTitle) -> TitleMatch {
+        let source_score = title.vote_average / 10.0;
+        let source_trust = 0.9;
+        let global_score = source_score * source_trust;
         TitleMatch {
             id: title.id.to_string(),
             name: title.name,
@@ -64,21 +67,47 @@ impl TmdbClient {
                 .as_deref()
                 .and_then(|date| date.get(0..4))
                 .and_then(|year| year.parse::<u16>().ok()),
-            score: title.vote_average / 10.0,
+            source_score,
+            source_trust,
+            global_score,
             source: "TheMovieDB".to_string(),
+            extras: crate::metadata::models::MetadataExtras {
+                external_ids: crate::metadata::models::ExternalIds {
+                    tmdb: Some(title.id.to_string()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
         }
     }
 
     fn normalize_episode(&self, episode: TmdbEpisode) -> EpisodeMatch {
+        let source_score = 1.0;
+        let source_trust = 0.9;
+        let global_score = source_score * source_trust;
         EpisodeMatch {
             id: episode.id.to_string(),
             season: episode.season_number,
             episode: episode.episode_number,
             title: episode.name,
+            source_score,
+            source_trust,
+            global_score,
+            source: "TheMovieDB".to_string(),
+            extras: crate::metadata::models::MetadataExtras {
+                external_ids: crate::metadata::models::ExternalIds {
+                    tmdb: Some(episode.id.to_string()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
         }
     }
 
     fn normalize_movie(&self, details: TmdbMovieDetails) -> MovieMatch {
+        let source_score = 1.0;
+        let source_trust = 0.9;
+        let global_score = source_score * source_trust;
         MovieMatch {
             id: details.id.to_string(),
             title: details.title,
@@ -87,7 +116,17 @@ impl TmdbClient {
                 .as_deref()
                 .and_then(|date| date.get(0..4))
                 .and_then(|year| year.parse::<u16>().ok()),
+            source_score,
+            source_trust,
+            global_score,
             source: "TheMovieDB".to_string(),
+            extras: crate::metadata::models::MetadataExtras {
+                external_ids: crate::metadata::models::ExternalIds {
+                    tmdb: Some(details.id.to_string()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
         }
     }
 
