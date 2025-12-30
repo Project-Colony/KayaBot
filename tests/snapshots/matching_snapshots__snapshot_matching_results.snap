@@ -1,0 +1,13 @@
+---
+source: tests/matching_snapshots.rs
+expression: format_results(&results)
+---
+file=My.Show.S01E02.1080p.mkv status=Ok confidence=0.85
+  metadata: Series title=My Show
+  candidate: Series title=My Show
+file=Example Movie 2020 4k.mkv status=Ok confidence=0.85
+  metadata: Movie title=Example Movie year=2020
+  candidate: Movie title=Example Movie year=2020
+file=Mystery.Title.mkv status=Ok confidence=0.85
+  metadata: Series title=Mystery Title
+  candidate: Series title=Mystery Title

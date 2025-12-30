@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use serde::Deserialize;
+
 use crate::metadata::error::MetadataError;
 use crate::metadata::models::{EpisodeMatch, MovieMatch, TitleMatch};
 use crate::metadata::provider::MetadataProvider;
@@ -10,14 +12,14 @@ pub struct OmdbClient {
     base_url: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 struct OmdbSearchItem {
     imdb_id: String,
     title: String,
     year: Option<u16>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 struct OmdbMovieDetails {
     imdb_id: String,
     title: String,
@@ -134,5 +136,30 @@ impl MetadataProvider for OmdbClient {
         }
         let details = self.mock_movie_details(title_id);
         Ok(self.normalize_movie(details))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_title_from_fixture() {
+        let payload = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/omdb_search.json"
+        ));
+        let item: OmdbSearchItem = serde_json::from_str(payload).expect("fixture should parse");
+        let client = OmdbClient::new("test-key");
+        let normalized = client.normalize_title(item);
+
+        assert_eq!(normalized.id, "tt1234567");
+        assert_eq!(normalized.name, "Example Movie");
+        assert_eq!(normalized.year, Some(2001));
+        assert_eq!(normalized.source, "OMDb");
+        assert_eq!(
+            normalized.extras.external_ids.imdb.as_deref(),
+            Some("tt1234567")
+        );
     }
 }

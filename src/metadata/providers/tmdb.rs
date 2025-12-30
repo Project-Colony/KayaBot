@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use serde::Deserialize;
+
 use crate::metadata::error::MetadataError;
 use crate::metadata::models::{EpisodeMatch, MovieMatch, TitleMatch};
 use crate::metadata::provider::MetadataProvider;
@@ -10,7 +12,7 @@ pub struct TmdbClient {
     base_url: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 struct TmdbTitle {
     id: u32,
     name: String,
@@ -18,7 +20,7 @@ struct TmdbTitle {
     vote_average: f32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 struct TmdbEpisode {
     id: u32,
     season_number: u32,
@@ -26,7 +28,7 @@ struct TmdbEpisode {
     name: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 struct TmdbMovieDetails {
     id: u32,
     title: String,
@@ -192,5 +194,27 @@ impl MetadataProvider for TmdbClient {
         }
         let details = self.mock_movie_details(title_id);
         Ok(self.normalize_movie(details))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_title_from_fixture() {
+        let payload = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/tmdb_search.json"
+        ));
+        let title: TmdbTitle = serde_json::from_str(payload).expect("fixture should parse");
+        let client = TmdbClient::new("test-key");
+        let normalized = client.normalize_title(title);
+
+        assert_eq!(normalized.id, "550");
+        assert_eq!(normalized.name, "Fight Club");
+        assert_eq!(normalized.year, Some(1999));
+        assert_eq!(normalized.source, "TheMovieDB");
+        assert_eq!(normalized.extras.external_ids.tmdb.as_deref(), Some("550"));
     }
 }

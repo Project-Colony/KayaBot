@@ -472,3 +472,41 @@ fn levenshtein_distance(a: &str, b: &str) -> usize {
 
     costs[b_chars.len()]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_name_strips_tags_and_year() {
+        let normalized = normalize_name("My Movie 2019 1080p VOSTFR");
+
+        assert_eq!(normalized.normalized, "my movie");
+        assert_eq!(normalized.year, Some(2019));
+        assert!(normalized.removed_tags.contains(&"2019".to_string()));
+        assert!(normalized.removed_tags.contains(&"1080p".to_string()));
+        assert!(normalized.removed_tags.contains(&"vostfr".to_string()));
+    }
+
+    #[test]
+    fn normalize_name_extracts_season_episode() {
+        let normalized = normalize_name("My.Show.S02E03.720p");
+
+        assert_eq!(normalized.season, Some(2));
+        assert_eq!(normalized.episode, Some(3));
+    }
+
+    #[test]
+    fn rank_candidates_prefers_matching_season_episode() {
+        let ranked = rank_candidates(
+            "My Show S01E02",
+            &[
+                "My Show S01E03".to_string(),
+                "My Show S01E02".to_string(),
+            ],
+        );
+
+        assert_eq!(ranked[0].original, "My Show S01E02");
+        assert!(ranked[0].score >= ranked[1].score);
+    }
+}

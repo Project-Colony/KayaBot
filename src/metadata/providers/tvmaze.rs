@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use serde::Deserialize;
+
 use crate::metadata::error::MetadataError;
 use crate::metadata::models::{EpisodeMatch, MovieMatch, TitleMatch};
 use crate::metadata::provider::MetadataProvider;
@@ -10,7 +12,7 @@ pub struct TvMazeClient {
     user_agent: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 struct TvMazeShow {
     id: u32,
     name: String,
@@ -18,7 +20,7 @@ struct TvMazeShow {
     score: f32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 struct TvMazeEpisode {
     id: u32,
     season: u32,
@@ -144,5 +146,30 @@ impl MetadataProvider for TvMazeClient {
         Err(MetadataError::NotFound(
             "TVmaze does not provide movie details.".to_string(),
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_title_from_fixture() {
+        let payload = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/tvmaze_show.json"
+        ));
+        let show: TvMazeShow = serde_json::from_str(payload).expect("fixture should parse");
+        let client = TvMazeClient::new("kayabot-test");
+        let normalized = client.normalize_title(show);
+
+        assert_eq!(normalized.id, "123");
+        assert_eq!(normalized.name, "Example Show");
+        assert_eq!(normalized.year, Some(2015));
+        assert_eq!(normalized.source, "TVmaze");
+        assert_eq!(
+            normalized.extras.external_ids.tvmaze.as_deref(),
+            Some("123")
+        );
     }
 }
