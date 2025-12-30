@@ -76,7 +76,7 @@ Ce document définit le périmètre fonctionnel à émuler pour atteindre une pa
 ### Compatibilité des règles de renommage
 - **Support minimal des règles FileBot** via un langage de template compatible.
 - Variables attendues (exemples) :
-  - `{n}` (nom), `{y}` (année), `{s}` (saison), `{e}` (épisode), `{t}` (titre épisode).
+  - `{n}` (nom), `{y}` (année), `{s}`/`{s00}` (saison), `{e}`/`{e00}` (épisode), `{t}` (titre épisode).
   - `{airdate}` (date de diffusion si disponible).
 - **Mapping interne** vers la structure de données propre au projet.
 
