@@ -523,13 +523,43 @@ impl RenameApp {
         self.rename_feedback = None;
         self.refresh_rename_ui_state();
 
+        let parsed_hint = self.detect_search_hint();
         if self.detected_series_name.trim().is_empty() {
-            if let Some(detected) = self.detect_series_name() {
-                self.detected_series_name = detected;
+            if let Some(title) = parsed_hint.as_ref().and_then(|hint| hint.title.clone()) {
+                self.detected_series_name = title;
             }
         }
 
-        let query = self.detected_series_name.trim();
+        if let Some(hint) = parsed_hint.as_ref() {
+            let has_episode = hint.season.is_some() || hint.episode.is_some();
+            let has_year = hint.year.is_some();
+            if has_episode && self.content_type != ContentType::Series {
+                self.switch_metadata_source(self.preferred_series_source, ContentType::Series);
+            } else if has_year && !has_episode && self.content_type != ContentType::Movie {
+                self.switch_metadata_source(self.preferred_movie_source, ContentType::Movie);
+            }
+        }
+
+        let mut query = self.detected_series_name.trim().to_string();
+        if query.is_empty() {
+            if let Some(title) = parsed_hint.as_ref().and_then(|hint| hint.title.clone()) {
+                query = title;
+            }
+        }
+        if self.content_type == ContentType::Movie {
+            if let Some(year) = parsed_hint.as_ref().and_then(|hint| hint.year) {
+                if !query.is_empty() {
+                    query = format!("{query} {year}");
+                }
+            }
+        }
+        let query = query.trim();
+        if query.is_empty() {
+            self.fetch_status =
+                FetchStatus::Error("Aucun titre détecté pour la recherche.".to_string());
+            self.refresh_rename_ui_state();
+            return;
+        }
         match self.metadata_provider.search_title(query) {
             Ok(matches) => {
                 self.title_matches = matches.clone();
@@ -578,12 +608,18 @@ impl RenameApp {
         self.refresh_rename_ui_state();
     }
 
-    fn detect_series_name(&self) -> Option<String> {
+    fn detect_search_hint(&self) -> Option<matching::ParsedName> {
         let file = self.original_files.first()?;
-        let mut parts = file
-            .split(|c: char| !c.is_alphanumeric())
-            .filter(|part| !part.is_empty());
-        parts.next().map(|value| value.to_string())
+        let parsed = matching::parse_filename(file);
+        if parsed.title.is_none()
+            && parsed.season.is_none()
+            && parsed.episode.is_none()
+            && parsed.year.is_none()
+        {
+            None
+        } else {
+            Some(parsed)
+        }
     }
 
     fn fetch_data_panel(&mut self, ui: &mut egui::Ui) {

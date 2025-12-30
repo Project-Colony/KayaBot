@@ -2,7 +2,7 @@ mod advanced;
 mod parsing;
 
 pub use advanced::{NormalizedName, RankedCandidate, normalize_name, rank_candidates};
-use parsing::parse_filename;
+pub use parsing::{ParsedName, parse_filename};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MatchStatus {

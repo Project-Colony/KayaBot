@@ -8,7 +8,12 @@ pub struct ParsedName {
 }
 
 pub fn parse_filename(filename: &str) -> ParsedName {
-    let tokens = split_tokens(filename);
+    let basename = std::path::Path::new(filename)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or(filename);
+    let cleaned = strip_bracketed(basename);
+    let tokens = clean_tokens(split_tokens(&cleaned));
     if tokens.is_empty() {
         return ParsedName::default();
     }
@@ -88,6 +93,129 @@ fn split_tokens(input: &str) -> Vec<String> {
         tokens.push(current);
     }
     tokens
+}
+
+fn strip_bracketed(input: &str) -> String {
+    let mut output = String::new();
+    let mut depth = 0;
+    for ch in input.chars() {
+        match ch {
+            '(' | '[' | '{' => {
+                depth += 1;
+                output.push(' ');
+            }
+            ')' | ']' | '}' => {
+                if depth > 0 {
+                    depth -= 1;
+                }
+                output.push(' ');
+            }
+            _ => {
+                if depth == 0 {
+                    output.push(ch);
+                }
+            }
+        }
+    }
+    output
+}
+
+fn clean_tokens(tokens: Vec<String>) -> Vec<String> {
+    let mut filtered: Vec<String> = tokens
+        .into_iter()
+        .filter(|token| {
+            let lower = token.to_lowercase();
+            !is_release_tag(&lower) && !is_group_name(&lower)
+        })
+        .collect();
+
+    if let Some(last) = filtered.last() {
+        if looks_like_group_suffix(last) {
+            filtered.pop();
+        }
+    }
+
+    filtered
+}
+
+fn is_release_tag(token: &str) -> bool {
+    matches!(
+        token,
+        "1080p"
+            | "720p"
+            | "480p"
+            | "2160p"
+            | "4k"
+            | "x264"
+            | "x265"
+            | "h264"
+            | "h265"
+            | "hevc"
+            | "av1"
+            | "bluray"
+            | "bdrip"
+            | "brrip"
+            | "webrip"
+            | "webdl"
+            | "web"
+            | "hdrip"
+            | "dvdrip"
+            | "hdtv"
+            | "proper"
+            | "repack"
+            | "extended"
+            | "remastered"
+            | "subbed"
+            | "dubbed"
+            | "multi"
+            | "dual"
+            | "dts"
+            | "aac"
+            | "ac3"
+            | "ddp"
+            | "truehd"
+            | "atmos"
+            | "hdr"
+            | "hdr10"
+            | "dv"
+            | "sample"
+            | "cam"
+            | "ts"
+            | "tc"
+            | "scr"
+            | "unrated"
+            | "limited"
+            | "uncut"
+            | "complete"
+            | "readnfo"
+    )
+}
+
+fn is_group_name(token: &str) -> bool {
+    matches!(
+        token,
+        "rarbg"
+            | "yify"
+            | "yts"
+            | "eztv"
+            | "rartv"
+            | "ettv"
+            | "psa"
+            | "ntb"
+            | "amzn"
+            | "nf"
+            | "dsnp"
+            | "hmax"
+            | "hulu"
+    )
+}
+
+fn looks_like_group_suffix(token: &str) -> bool {
+    let is_all_upper = token
+        .chars()
+        .all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit());
+    let has_upper = token.chars().any(|ch| ch.is_ascii_uppercase());
+    is_all_upper && has_upper && token.len() <= 6
 }
 
 fn parse_compact_season_episode(token: &str) -> Option<(u32, u32)> {

@@ -176,12 +176,8 @@ fn resolve_token(token: &str, context: &TemplateContext) -> Option<String> {
     match normalized.as_str() {
         "n" | "name" | "title" | "seriestitle" | "movietitle" => Some(context.name.clone()),
         "t" | "episodetitle" => context.title.clone(),
-        "s" | "season" => context
-            .season
-            .map(|value| pad_number(value, padding)),
-        "e" | "episode" => context
-            .episode
-            .map(|value| pad_number(value, padding)),
+        "s" | "season" => context.season.map(|value| pad_number(value, padding)),
+        "e" | "episode" => context.episode.map(|value| pad_number(value, padding)),
         "y" | "year" | "releaseyear" => context.year.map(|value| value.to_string()),
         _ => None,
     }
