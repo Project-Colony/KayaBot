@@ -1,4 +1,7 @@
-#[derive(Debug, Clone, Copy)]
+use std::fs;
+use std::path::PathBuf;
+
+#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 pub struct FormatOptions {
     pub include_episode_title: bool,
     pub include_year: bool,
@@ -10,6 +13,37 @@ impl Default for FormatOptions {
             include_episode_title: true,
             include_year: true,
         }
+    }
+}
+
+impl FormatOptions {
+    pub fn load() -> Option<Self> {
+        let path = Self::config_path()?;
+        let contents = fs::read_to_string(path).ok()?;
+        toml::from_str(&contents).ok()
+    }
+
+    pub fn save(&self) {
+        let Some(path) = Self::config_path() else {
+            return;
+        };
+        if let Some(parent) = path.parent() {
+            if let Err(err) = fs::create_dir_all(parent) {
+                eprintln!("Failed to create format options directory: {err}");
+                return;
+            }
+        }
+        let Ok(payload) = toml::to_string_pretty(self) else {
+            return;
+        };
+        if let Err(err) = fs::write(path, payload) {
+            eprintln!("Failed to save format options: {err}");
+        }
+    }
+
+    fn config_path() -> Option<PathBuf> {
+        dirs::config_dir()
+            .map(|base| base.join("Colony").join("KayaBot").join("format_options.toml"))
     }
 }
 

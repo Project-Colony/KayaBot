@@ -130,7 +130,7 @@ impl Default for RenameApp {
             episode_matches: Vec::new(),
             show_match_picker: false,
             rename_feedback: None,
-            format_options: FormatOptions::default(),
+            format_options: FormatOptions::load().unwrap_or_default(),
             metadata_provider,
             rename_ui_state,
             active_metadata_source: MetadataSource::TheTvDb,
@@ -1102,13 +1102,21 @@ environment variables.",
 
             ui.add_space(6.0);
             ui.label(RichText::new("Formatting").size(12.0));
+            let mut format_changed = false;
             ui.horizontal(|ui| {
-                ui.checkbox(
-                    &mut self.format_options.include_episode_title,
-                    "Include episode title",
-                );
-                ui.checkbox(&mut self.format_options.include_year, "Include year");
+                format_changed |= ui
+                    .checkbox(
+                        &mut self.format_options.include_episode_title,
+                        "Include episode title",
+                    )
+                    .changed();
+                format_changed |= ui
+                    .checkbox(&mut self.format_options.include_year, "Include year")
+                    .changed();
             });
+            if format_changed {
+                self.format_options.save();
+            }
             let format_label = match self.content_type {
                 ContentType::Series => DEFAULT_SERIES_FORMAT,
                 ContentType::Movie => DEFAULT_MOVIE_FORMAT,
