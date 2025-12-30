@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::metadata::cache::MetadataCache;
 use crate::metadata::error::MetadataError;
-use crate::metadata::models::{EpisodeMatch, TitleMatch};
+use crate::metadata::models::{EpisodeMatch, MovieMatch, TitleMatch};
 use crate::metadata::provider::{MetadataProvider, MetadataSource};
 
 #[derive(Debug)]
@@ -165,5 +165,25 @@ impl MetadataProvider for FileBotLikeProvider {
                 Err(err)
             }
         }
+    }
+
+    fn fetch_movie_details(&mut self, title_id: &str) -> Result<MovieMatch, MetadataError> {
+        if title_id.trim().is_empty() {
+            return Err(MetadataError::InvalidResponse(
+                "Title identifier cannot be empty.".to_string(),
+            ));
+        }
+
+        let record = self
+            .dataset
+            .get(&title_id.to_lowercase())
+            .ok_or_else(|| MetadataError::NotFound(format!("No title id '{title_id}'.")))?;
+
+        Ok(MovieMatch {
+            id: title_id.to_string(),
+            title: record.title.clone(),
+            year: record.year,
+            source: self.active_source.label().to_string(),
+        })
     }
 }

@@ -15,6 +15,14 @@ pub struct EpisodeMatch {
     pub title: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct MovieMatch {
+    pub id: String,
+    pub title: String,
+    pub year: Option<u16>,
+    pub source: String,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct NormalizedTitle {
     pub source: String,

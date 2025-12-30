@@ -1,5 +1,5 @@
 use crate::metadata::error::MetadataError;
-use crate::metadata::models::{EpisodeMatch, TitleMatch};
+use crate::metadata::models::{EpisodeMatch, MovieMatch, TitleMatch};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MetadataSource {
@@ -25,4 +25,5 @@ impl MetadataSource {
 pub trait MetadataProvider {
     fn search_title(&mut self, query: &str) -> Result<Vec<TitleMatch>, MetadataError>;
     fn fetch_episode_list(&mut self, title_id: &str) -> Result<Vec<EpisodeMatch>, MetadataError>;
+    fn fetch_movie_details(&mut self, title_id: &str) -> Result<MovieMatch, MetadataError>;
 }
