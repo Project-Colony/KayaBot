@@ -61,41 +61,16 @@ struct RenameApp {
 
 impl Default for RenameApp {
     fn default() -> Self {
-        let original_files = vec![
-            "alias.116",
-            "alias.117",
-            "alias.118",
-            "alias.119",
-            "alias.120",
-            "alias.121",
-            "alias.122",
-            "alias.201",
-            "alias.202",
-            "alias.203",
-            "alias.204",
-            "alias.205",
-            "alias.206",
-            "alias.207",
-            "alias.208",
-            "alias.209",
-        ]
-        .into_iter()
-        .map(String::from)
-        .collect::<Vec<String>>();
-
-        let match_results = matching::match_files(&original_files);
-        let rename_ui_state = if match_results.is_empty() {
-            RenameUiState::Empty
-        } else {
-            RenameUiState::Success(match_results.len())
-        };
+        let original_files = Vec::new();
+        let match_results = Vec::new();
+        let rename_ui_state = RenameUiState::Empty;
 
         Self {
             active_left_nav: LeftNav::Rename,
             original_files,
             match_results,
             content_type: ContentType::Series,
-            detected_series_name: "Alias".to_string(),
+            detected_series_name: String::new(),
             fetch_status: FetchStatus::Idle,
             title_matches: Vec::new(),
             selected_title_id: None,
