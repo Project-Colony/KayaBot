@@ -20,44 +20,7 @@ struct TitleRecord {
 
 impl FileBotLikeProvider {
     pub fn new() -> Self {
-        let mut dataset = HashMap::new();
-
-        dataset.insert(
-            "alias".to_string(),
-            TitleRecord {
-                title: "Alias".to_string(),
-                year: Some(2001),
-                episodes: vec![
-                    EpisodeMatch {
-                        id: "alias-s01e01".to_string(),
-                        season: 1,
-                        episode: 1,
-                        title: "Truth Be Told".to_string(),
-                    },
-                    EpisodeMatch {
-                        id: "alias-s01e02".to_string(),
-                        season: 1,
-                        episode: 2,
-                        title: "So It Begins".to_string(),
-                    },
-                ],
-            },
-        );
-
-        dataset.insert(
-            "fringe".to_string(),
-            TitleRecord {
-                title: "Fringe".to_string(),
-                year: Some(2008),
-                episodes: vec![EpisodeMatch {
-                    id: "fringe-s01e01".to_string(),
-                    season: 1,
-                    episode: 1,
-                    title: "Pilot".to_string(),
-                }],
-            },
-        );
-
+        let dataset = HashMap::new();
         Self {
             dataset,
             cache: MetadataCache::new(),
