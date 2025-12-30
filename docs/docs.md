@@ -45,20 +45,65 @@ Formats finaux (et fallbacks) :
 - Séries : TheTVDB en source primaire, TVmaze en fallback si aucune réponse.
 - Films : TheMovieDB (TMDB) en source primaire, OMDb en fallback si aucune réponse.
 
-#### Attributs attendus par source (films / séries)
+#### Attributs attendus par source (normalisés)
 
-Les attributs ci-dessous correspondent aux champs utilisés par KayaBot (modèles `TitleMatch` et `EpisodeMatch`).
+Les tableaux ci-dessous listent les champs requis vs optionnels pour alimenter les formats cibles (modèles `NormalizedTitle` et `NormalizedEpisode`).
 
-| Source | Films (Title, Year) | Séries (Series Title, Season, Episode, Episode Title) |
+##### Films (format cible : `Title`, `Release Year`, `IMDb ID`)
+
+| Source | Requis | Optionnels |
 | --- | --- | --- |
-| TheMovieDB | Title, Year | Series Title, Season, Episode, Episode Title |
-| AniDB | Title | Series Title, Season, Episode, Episode Title |
-| TheTVDB | — | Series Title, Season, Episode, Episode Title |
-| TVmaze | — | Series Title, Season, Episode, Episode Title |
+| TheMovieDB | `title`, `source_id` | `release_year`, `imdb_id` |
+| OMDb | `title`, `source_id` | `release_year`, `imdb_id` |
+| AniDB | `title`, `source_id` | `release_year`, `imdb_id` |
+
+##### Séries / épisodes (format cible : `Series Title`, `Season`, `Episode`, `Episode Title`, `Release Year`, `IMDb ID`)
+
+| Source | Requis | Optionnels |
+| --- | --- | --- |
+| TheTVDB | `series_title`, `series_id`, `season`, `episode` | `episode_title`, `release_year`, `imdb_id` |
+| TVmaze | `series_title`, `series_id`, `season`, `episode` | `episode_title`, `release_year`, `imdb_id` |
+| AniDB | `series_title`, `series_id`, `season`, `episode` | `episode_title`, `release_year`, `imdb_id` |
 
 Remarques :
-- Les films n'utilisent pas AniDB/TheTVDB/TVmaze dans l'UI actuelle, mais la liste ci-dessus fixe les champs attendus si l'intégration est ajoutée.
-- Tous les champs sont optionnels côté UI : un `Year` ou un `Episode Title` manquant déclenche un fallback de formatage.
+- Les films n'utilisent pas AniDB dans l'UI actuelle, mais la table fixe les champs attendus si l'intégration est ajoutée.
+- Les champs optionnels peuvent déclencher des fallbacks de formatage (ex: absence de `release_year` ou `episode_title`).
+
+#### Mapping source → format cible (normalisé)
+
+Ce mapping décrit les correspondances minimales à appliquer lors de l'implémentation des adapters d'API.
+
+##### TheMovieDB (film)
+- `id` → `source_id`
+- `title` → `title`
+- `release_date` → `release_year` (année extraite)
+- `imdb_id` → `imdb_id`
+
+##### OMDb (film)
+- `imdbID` → `imdb_id` (et `source_id` si OMDb est la source primaire)
+- `Title` → `title`
+- `Year` → `release_year`
+
+##### AniDB (film/série)
+- `anime_id` → `source_id` / `series_id`
+- `title` → `title` / `series_title`
+- `year` → `release_year`
+
+##### TheTVDB (série/épisode)
+- `series.id` → `series_id`
+- `series.name` → `series_title`
+- `episode.seasonNumber` → `season`
+- `episode.number` → `episode`
+- `episode.name` → `episode_title`
+- `episode.year` → `release_year`
+
+##### TVmaze (série/épisode)
+- `show.id` → `series_id`
+- `show.name` → `series_title`
+- `season.number` → `season`
+- `episode.number` → `episode`
+- `episode.name` → `episode_title`
+- `episode.airdate` → `release_year` (année extraite)
 
 ## Flux utilisateur (prototype)
 
