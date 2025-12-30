@@ -130,7 +130,7 @@ impl Default for RenameApp {
             episode_matches: Vec::new(),
             show_match_picker: false,
             rename_feedback: None,
-            format_options: FormatOptions::default(),
+            format_options: FormatOptions::load().unwrap_or_default(),
             metadata_provider,
             rename_ui_state,
             active_metadata_source: MetadataSource::TheTvDb,
@@ -547,9 +547,12 @@ impl RenameApp {
         ui.add_space(12.0);
         ui.label(RichText::new("API configuration").strong());
         ui.label(
-            RichText::new("Keys are loaded from ~/.kayabot/config.toml or environment variables.")
-                .size(11.0)
-                .color(palette.subtext0),
+            RichText::new(
+                "Keys are loaded from config.toml in the KayaBot config directory or \
+environment variables.",
+            )
+            .size(11.0)
+            .color(palette.subtext0),
         );
         if let Some(path) = ApiConfig::config_path() {
             ui.label(
@@ -1099,13 +1102,21 @@ impl RenameApp {
 
             ui.add_space(6.0);
             ui.label(RichText::new("Formatting").size(12.0));
+            let mut format_changed = false;
             ui.horizontal(|ui| {
-                ui.checkbox(
-                    &mut self.format_options.include_episode_title,
-                    "Include episode title",
-                );
-                ui.checkbox(&mut self.format_options.include_year, "Include year");
+                format_changed |= ui
+                    .checkbox(
+                        &mut self.format_options.include_episode_title,
+                        "Include episode title",
+                    )
+                    .changed();
+                format_changed |= ui
+                    .checkbox(&mut self.format_options.include_year, "Include year")
+                    .changed();
             });
+            if format_changed {
+                self.format_options.save();
+            }
             let format_label = match self.content_type {
                 ContentType::Series => DEFAULT_SERIES_FORMAT,
                 ContentType::Movie => DEFAULT_MOVIE_FORMAT,
@@ -1532,7 +1543,7 @@ impl ApiConfig {
     }
 
     fn config_path() -> Option<PathBuf> {
-        dirs::home_dir().map(|home| home.join(".kayabot").join("config.toml"))
+        config_root().map(|root| root.join("config.toml"))
     }
 
     fn tmdb_configured(&self) -> bool {
@@ -1905,8 +1916,12 @@ impl UserPreferences {
     }
 
     fn preferences_path() -> Option<PathBuf> {
-        dirs::home_dir().map(|home| home.join(".kayabot").join("preferences.toml"))
+        config_root().map(|root| root.join("preferences.toml"))
     }
+}
+
+fn config_root() -> Option<PathBuf> {
+    dirs::config_dir().map(|base| base.join("Colony").join("KayaBot"))
 }
 
 trait ListItem {
