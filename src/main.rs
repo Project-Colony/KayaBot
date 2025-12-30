@@ -15,6 +15,7 @@ use metadata::providers::{
     anidb::AniDbClient, omdb::OmdbClient, thetvdb::TheTvDbClient, tmdb::TmdbClient,
     tvmaze::TvMazeClient,
 };
+use std::env;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LeftNav {
@@ -67,6 +68,7 @@ struct RenameApp {
     preferred_movie_source: MetadataSource,
     preferred_series_source: MetadataSource,
     detection_notice: Option<String>,
+    force_metadata_source: bool,
 }
 
 impl Default for RenameApp {
@@ -74,12 +76,28 @@ impl Default for RenameApp {
         let original_files = Vec::new();
         let match_results = Vec::new();
         let rename_ui_state = RenameUiState::Empty;
+        let api_config = ApiConfig::from_env();
         let mut metadata_provider = MetadataPipeline::new(vec![
-            (MetadataSource::TheMovieDb, Box::new(TmdbClient::new(""))),
-            (MetadataSource::AniDb, Box::new(AniDbClient::new(""))),
-            (MetadataSource::TheTvDb, Box::new(TheTvDbClient::new(""))),
-            (MetadataSource::TvMaze, Box::new(TvMazeClient::new(""))),
-            (MetadataSource::Omdb, Box::new(OmdbClient::new(""))),
+            (
+                MetadataSource::TheMovieDb,
+                Box::new(TmdbClient::new(api_config.tmdb_token)),
+            ),
+            (
+                MetadataSource::AniDb,
+                Box::new(AniDbClient::new(api_config.anidb_api_key)),
+            ),
+            (
+                MetadataSource::TheTvDb,
+                Box::new(TheTvDbClient::new(api_config.tvdb_api_key)),
+            ),
+            (
+                MetadataSource::TvMaze,
+                Box::new(TvMazeClient::new(api_config.tvmaze_user_agent)),
+            ),
+            (
+                MetadataSource::Omdb,
+                Box::new(OmdbClient::new(api_config.omdb_api_key)),
+            ),
         ]);
         metadata_provider.set_active_sources(vec![
             MetadataSource::TheTvDb,
@@ -106,6 +124,7 @@ impl Default for RenameApp {
             preferred_movie_source: MetadataSource::TheMovieDb,
             preferred_series_source: MetadataSource::TheTvDb,
             detection_notice: None,
+            force_metadata_source: false,
         }
     }
 }
@@ -428,9 +447,7 @@ impl RenameApp {
     fn switch_metadata_source(&mut self, source: MetadataSource, content_type: ContentType) {
         self.active_metadata_source = source;
         self.content_type = content_type;
-        let mut sources = vec![source];
-        sources.extend(self.fallback_sources(content_type, source));
-        self.metadata_provider.set_active_sources(sources);
+        self.refresh_active_sources();
         self.fetch_status = FetchStatus::Idle;
         self.title_matches.clear();
         self.episode_matches.clear();
@@ -442,6 +459,17 @@ impl RenameApp {
             ContentType::Series => self.preferred_series_source = source,
         }
         self.refresh_rename_ui_state();
+    }
+
+    fn refresh_active_sources(&mut self) {
+        let sources = if self.force_metadata_source {
+            vec![self.active_metadata_source]
+        } else {
+            let mut sources = vec![self.active_metadata_source];
+            sources.extend(self.fallback_sources(self.content_type, self.active_metadata_source));
+            sources
+        };
+        self.metadata_provider.set_active_sources(sources);
     }
 
     fn fallback_sources(
@@ -643,6 +671,14 @@ impl RenameApp {
                         .desired_width(140.0),
                 );
             });
+            let force_response = ui.checkbox(&mut self.force_metadata_source, "Forcer la source");
+            if force_response.changed() {
+                self.refresh_active_sources();
+                self.fetch_status = FetchStatus::Idle;
+                self.title_matches.clear();
+                self.episode_matches.clear();
+                self.selected_title_id = None;
+            }
             if let Some(message) = &self.detection_notice {
                 ui.add_space(4.0);
                 ui.label(RichText::new(message).color(Color32::from_rgb(150, 110, 30)));
@@ -682,8 +718,13 @@ impl RenameApp {
             ui.label(RichText::new("Proposed Results").size(12.0));
             ui.label(
                 RichText::new(format!(
-                    "Source: {}",
-                    self.metadata_provider.active_source().label()
+                    "Source: {}{}",
+                    self.metadata_provider.active_source().label(),
+                    if self.force_metadata_source {
+                        " (forcée)"
+                    } else {
+                        ""
+                    }
                 ))
                 .size(10.0)
                 .color(Color32::from_gray(110)),
@@ -708,7 +749,7 @@ impl RenameApp {
             } else {
                 ScrollArea::vertical().max_height(120.0).show(ui, |ui| {
                     for title in &self.title_matches {
-                        ui.label(format!("{} ({})", title.name, title.source));
+                        ui.label(self.format_title_match_summary(title));
                     }
                 });
             }
@@ -736,24 +777,32 @@ impl RenameApp {
                 let mut selected_id = None;
                 let mut should_fetch = false;
                 let mut should_close = false;
-                for title in &self.title_matches {
-                    let label = format!(
-                        "{}{} (score {:.2}, trust {:.2})",
-                        title.name,
-                        title
-                            .year
-                            .map(|year| format!(" {year}"))
-                            .unwrap_or_default(),
-                        title.global_score,
-                        title.source_trust
-                    );
-                    let selected = self.selected_title_id.as_deref() == Some(&title.id);
-                    if ui.selectable_label(selected, label).clicked() {
-                        selected_id = Some(title.id.clone());
-                        should_fetch = self.content_type == ContentType::Series;
-                        should_close = true;
-                    }
-                }
+                ui.horizontal(|ui| {
+                    ui.vertical(|ui| {
+                        for title in &self.title_matches {
+                            let label = self.format_title_match_summary(title);
+                            let selected = self.selected_title_id.as_deref() == Some(&title.id);
+                            if ui.selectable_label(selected, label).clicked() {
+                                selected_id = Some(title.id.clone());
+                                should_fetch = self.content_type == ContentType::Series;
+                                should_close = true;
+                            }
+                        }
+                    });
+                    ui.separator();
+                    ui.vertical(|ui| {
+                        ui.label(RichText::new("Source détaillée").strong());
+                        ui.add_space(4.0);
+                        if let Some(title) = self.selected_title_match() {
+                            self.render_title_match_details(ui, title);
+                        } else {
+                            ui.label(
+                                RichText::new("Sélectionnez un match.")
+                                    .color(Color32::from_gray(110)),
+                            );
+                        }
+                    });
+                });
                 if let Some(selected_id) = selected_id {
                     self.selected_title_id = Some(selected_id);
                     if should_fetch {
@@ -916,6 +965,118 @@ impl RenameApp {
                     self.format_options,
                 )
             }
+        }
+    }
+
+    fn format_title_match_summary(&self, title: &TitleMatch) -> String {
+        let language = title.extras.language.as_deref().unwrap_or("—");
+        let year = title
+            .year
+            .map(|year| year.to_string())
+            .unwrap_or_else(|| "—".to_string());
+        format!(
+            "{} ({} • score {:.2} • lang {} • année {})",
+            title.name, title.source, title.global_score, language, year
+        )
+    }
+
+    fn selected_title_match(&self) -> Option<&TitleMatch> {
+        let selected_id = self.selected_title_id.as_deref()?;
+        self.title_matches.iter().find(|title| title.id == selected_id)
+    }
+
+    fn render_title_match_details(&self, ui: &mut egui::Ui, title: &TitleMatch) {
+        ui.label(format!("Titre: {}", title.name));
+        ui.label(format!("Source: {}", title.source));
+        ui.label(format!(
+            "Score global: {:.2} (source {:.2} • confiance {:.2})",
+            title.global_score, title.source_score, title.source_trust
+        ));
+        ui.label(format!(
+            "Langue: {}",
+            title.extras.language.as_deref().unwrap_or("—")
+        ));
+        ui.label(format!(
+            "Année: {}",
+            title
+                .year
+                .map(|year| year.to_string())
+                .unwrap_or_else(|| "—".to_string())
+        ));
+        ui.label(format!("ID source: {}", title.id));
+
+        let mut external_ids = Vec::new();
+        let ids = &title.extras.external_ids;
+        if let Some(id) = ids.imdb.as_deref() {
+            external_ids.push(format!("imdb:{id}"));
+        }
+        if let Some(id) = ids.tmdb.as_deref() {
+            external_ids.push(format!("tmdb:{id}"));
+        }
+        if let Some(id) = ids.tvdb.as_deref() {
+            external_ids.push(format!("tvdb:{id}"));
+        }
+        if let Some(id) = ids.tvmaze.as_deref() {
+            external_ids.push(format!("tvmaze:{id}"));
+        }
+        if let Some(id) = ids.anidb.as_deref() {
+            external_ids.push(format!("anidb:{id}"));
+        }
+        if let Some(id) = ids.omdb.as_deref() {
+            external_ids.push(format!("omdb:{id}"));
+        }
+        for other in &ids.other {
+            external_ids.push(format!("{}:{}", other.source, other.id));
+        }
+        let external_line = if external_ids.is_empty() {
+            "IDs externes: —".to_string()
+        } else {
+            format!("IDs externes: {}", external_ids.join(", "))
+        };
+        ui.label(external_line);
+
+        if !title.extras.aliases.is_empty() {
+            ui.label(format!("Alias: {}", title.extras.aliases.join(", ")));
+        }
+        if !title.extras.genres.is_empty() {
+            ui.label(format!("Genres: {}", title.extras.genres.join(", ")));
+        }
+        if let Some(synopsis) = title.extras.synopsis.as_deref() {
+            ui.add_space(4.0);
+            ui.label(RichText::new("Synopsis").strong());
+            ui.label(RichText::new(synopsis).size(10.0).color(Color32::from_gray(120)));
+        }
+    }
+}
+
+struct ApiConfig {
+    tmdb_token: String,
+    tvdb_api_key: String,
+    omdb_api_key: String,
+    anidb_api_key: String,
+    tvmaze_user_agent: String,
+}
+
+impl ApiConfig {
+    fn from_env() -> Self {
+        let tmdb_token = env::var("KAYABOT_TMDB_BEARER_TOKEN")
+            .or_else(|_| env::var("KAYABOT_TMDB_API_KEY"))
+            .unwrap_or_default();
+        let tvdb_api_key = env::var("KAYABOT_TVDB_API_KEY").unwrap_or_default();
+        let omdb_api_key = env::var("KAYABOT_OMDB_API_KEY").unwrap_or_default();
+        let anidb_api_key = env::var("KAYABOT_ANIDB_PASSWORD")
+            .or_else(|_| env::var("KAYABOT_ANIDB_API_KEY"))
+            .unwrap_or_default();
+        let tvmaze_user_agent = env::var("KAYABOT_TVMAZE_USER_AGENT")
+            .or_else(|_| env::var("KAYABOT_TVMAZE_API_KEY"))
+            .unwrap_or_else(|_| "KayaBot".to_string());
+
+        Self {
+            tmdb_token,
+            tvdb_api_key,
+            omdb_api_key,
+            anidb_api_key,
+            tvmaze_user_agent,
         }
     }
 }
