@@ -582,7 +582,7 @@ impl RenameApp {
                 let mut selected_id = None;
                 let mut should_fetch = false;
                 let mut should_close = false;
-                for (index, title) in self.title_matches.iter().enumerate() {
+                for title in &self.title_matches {
                     let label = format!(
                         "{}{} (score {:.2})",
                         title.name,
@@ -593,13 +593,11 @@ impl RenameApp {
                         title.score
                     );
                     let selected = self.selected_title_id.as_deref() == Some(&title.id);
-                    ui.push_id((index, &title.id), |ui| {
-                        if ui.selectable_label(selected, label).clicked() {
-                            selected_id = Some(title.id.clone());
-                            should_fetch = self.content_type == ContentType::Series;
-                            should_close = true;
-                        }
-                    });
+                    if ui.selectable_label(selected, label).clicked() {
+                        selected_id = Some(title.id.clone());
+                        should_fetch = self.content_type == ContentType::Series;
+                        should_close = true;
+                    }
                 }
                 if let Some(selected_id) = selected_id {
                     self.selected_title_id = Some(selected_id);
