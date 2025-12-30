@@ -1,7 +1,9 @@
+use serde::{Deserialize, Serialize};
+
 use crate::metadata::error::MetadataError;
 use crate::metadata::models::{EpisodeMatch, MovieMatch, TitleMatch};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum MetadataSource {
     TheMovieDb,
     AniDb,

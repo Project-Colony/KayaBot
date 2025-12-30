@@ -1,4 +1,6 @@
-#[derive(Debug, Clone, Default)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ExternalIds {
     pub imdb: Option<String>,
     pub tmdb: Option<String>,
@@ -9,13 +11,13 @@ pub struct ExternalIds {
     pub other: Vec<ExternalId>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExternalId {
     pub source: String,
     pub id: String,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MetadataExtras {
     pub aliases: Vec<String>,
     pub language: Option<String>,
@@ -24,7 +26,7 @@ pub struct MetadataExtras {
     pub synopsis: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TitleMatch {
     pub id: String,
     pub name: String,
@@ -36,7 +38,7 @@ pub struct TitleMatch {
     pub extras: MetadataExtras,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EpisodeMatch {
     pub id: String,
     pub season: u32,
@@ -49,7 +51,7 @@ pub struct EpisodeMatch {
     pub extras: MetadataExtras,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MovieMatch {
     pub id: String,
     pub title: String,
@@ -61,7 +63,7 @@ pub struct MovieMatch {
     pub extras: MetadataExtras,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct NormalizedTitle {
     pub source: String,
     pub source_id: String,
@@ -71,7 +73,7 @@ pub struct NormalizedTitle {
     pub extras: MetadataExtras,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct NormalizedEpisode {
     pub source: String,
     pub series_id: String,
