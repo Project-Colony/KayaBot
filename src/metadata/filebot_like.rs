@@ -3,13 +3,12 @@ use std::collections::HashMap;
 use crate::metadata::cache::MetadataCache;
 use crate::metadata::error::MetadataError;
 use crate::metadata::models::{EpisodeMatch, TitleMatch};
-use crate::metadata::provider::{MetadataProvider, MetadataSource};
+use crate::metadata::provider::MetadataProvider;
 
 #[derive(Debug)]
 pub struct FileBotLikeProvider {
     dataset: HashMap<String, TitleRecord>,
     cache: MetadataCache,
-    active_source: MetadataSource,
 }
 
 #[derive(Debug, Clone)]
@@ -25,19 +24,7 @@ impl FileBotLikeProvider {
         Self {
             dataset,
             cache: MetadataCache::new(),
-            active_source: MetadataSource::TheMovieDb,
         }
-    }
-
-    pub fn set_source(&mut self, source: MetadataSource) {
-        if self.active_source != source {
-            self.active_source = source;
-            self.cache.clear();
-        }
-    }
-
-    pub fn active_source(&self) -> MetadataSource {
-        self.active_source
     }
 
     fn normalize_query(query: &str) -> String {
@@ -66,7 +53,7 @@ impl MetadataProvider for FileBotLikeProvider {
                     name: record.title.clone(),
                     year: record.year,
                     score: 0.92,
-                    source: self.active_source.label().to_string(),
+                    source: "filebot-like".to_string(),
                 });
             }
         }
