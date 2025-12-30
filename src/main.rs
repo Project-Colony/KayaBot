@@ -8,7 +8,7 @@ use eframe::egui::{
 use formatting::{DEFAULT_SERIES_FORMAT, FormatOptions, MovieFormatInput, SeriesFormatInput};
 use metadata::filebot_like::FileBotLikeProvider;
 use metadata::models::{EpisodeMatch, TitleMatch};
-use metadata::provider::{MetadataProvider, MetadataSource};
+use metadata::provider::MetadataProvider;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LeftNav {
@@ -57,7 +57,6 @@ struct RenameApp {
     format_options: FormatOptions,
     metadata_provider: FileBotLikeProvider,
     rename_ui_state: RenameUiState,
-    active_metadata_source: MetadataSource,
 }
 
 impl Default for RenameApp {
@@ -81,7 +80,6 @@ impl Default for RenameApp {
             format_options: FormatOptions::default(),
             metadata_provider: FileBotLikeProvider::new(),
             rename_ui_state,
-            active_metadata_source: MetadataSource::TheMovieDb,
         }
     }
 }
@@ -284,7 +282,7 @@ impl RenameApp {
             .rounding(egui::Rounding::same(4.0))
             .inner_margin(egui::Margin::symmetric(8.0, 8.0));
 
-        let response = ui.allocate_ui_with_layout(
+        ui.allocate_ui_with_layout(
             Vec2::new(width, ui.available_height()),
             Layout::top_down(egui::Align::Min),
             |ui| {
@@ -324,51 +322,6 @@ impl RenameApp {
                 });
             },
         );
-
-        response.response.context_menu(|ui| {
-            app.fetch_match_context_menu(ui);
-        });
-    }
-
-    fn fetch_match_context_menu(&mut self, ui: &mut egui::Ui) {
-        ui.label(RichText::new("Fetch & Match Data:").strong());
-        ui.add_space(4.0);
-        ui.label(RichText::new("Episode Mode:").strong());
-        let episode_sources = [
-            MetadataSource::TheMovieDb,
-            MetadataSource::AniDb,
-            MetadataSource::TheTvDb,
-            MetadataSource::TvMaze,
-        ];
-        for source in episode_sources {
-            let selected = self.active_metadata_source == source;
-            if ui.selectable_label(selected, source.label()).clicked() {
-                self.switch_metadata_source(source, ContentType::Series);
-                ui.close_menu();
-            }
-        }
-        ui.add_space(6.0);
-        ui.label(RichText::new("Movie Mode:").strong());
-        let movie_sources = [MetadataSource::TheMovieDb, MetadataSource::Omdb];
-        for source in movie_sources {
-            let selected = self.active_metadata_source == source;
-            if ui.selectable_label(selected, source.label()).clicked() {
-                self.switch_metadata_source(source, ContentType::Movie);
-                ui.close_menu();
-            }
-        }
-    }
-
-    fn switch_metadata_source(&mut self, source: MetadataSource, content_type: ContentType) {
-        self.active_metadata_source = source;
-        self.content_type = content_type;
-        self.metadata_provider.set_source(source);
-        self.fetch_status = FetchStatus::Idle;
-        self.title_matches.clear();
-        self.episode_matches.clear();
-        self.selected_title_id = None;
-        self.rename_feedback = None;
-        self.refresh_rename_ui_state();
     }
 
     fn center_buttons(&mut self, ui: &mut egui::Ui) {
