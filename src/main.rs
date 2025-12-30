@@ -81,6 +81,7 @@ struct RenameApp {
     api_config: ApiConfig,
     active_settings_section: SettingsSection,
     user_preferences: UserPreferences,
+    system_visuals: Option<egui::Visuals>,
 }
 
 impl Default for RenameApp {
@@ -139,13 +140,18 @@ impl Default for RenameApp {
             force_metadata_source: false,
             api_config,
             active_settings_section: SettingsSection::Program,
-            user_preferences: UserPreferences::default(),
+            user_preferences: UserPreferences::load().unwrap_or_default(),
+            system_visuals: None,
         }
     }
 }
 
 impl eframe::App for RenameApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if self.system_visuals.is_none() {
+            self.system_visuals = Some(ctx.style().visuals.clone());
+        }
+        self.apply_theme(ctx);
         self.handle_dropped_files(ctx);
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.horizontal(|ui| {
@@ -158,6 +164,60 @@ impl eframe::App for RenameApp {
 }
 
 impl RenameApp {
+    fn apply_theme(&mut self, ctx: &egui::Context) {
+        let visuals = match self.user_preferences.theme {
+            ThemeChoice::System => self
+                .system_visuals
+                .clone()
+                .unwrap_or_else(egui::Visuals::default),
+            ThemeChoice::Latte => self.catppuccin_visuals(ThemeChoice::Latte),
+            ThemeChoice::Frappe => self.catppuccin_visuals(ThemeChoice::Frappe),
+            ThemeChoice::Macchiato => self.catppuccin_visuals(ThemeChoice::Macchiato),
+            ThemeChoice::Mocha => self.catppuccin_visuals(ThemeChoice::Mocha),
+        };
+        ctx.set_visuals(visuals);
+    }
+
+    fn catppuccin_visuals(&self, theme: ThemeChoice) -> egui::Visuals {
+        let palette = ThemePalette::from_theme(theme);
+        let mut visuals = if theme == ThemeChoice::Latte {
+            egui::Visuals::light()
+        } else {
+            egui::Visuals::dark()
+        };
+
+        visuals.override_text_color = Some(palette.text);
+        visuals.window_fill = palette.base;
+        visuals.panel_fill = palette.mantle;
+        visuals.faint_bg_color = palette.surface0;
+        visuals.extreme_bg_color = palette.crust;
+        visuals.widgets.noninteractive.bg_fill = palette.mantle;
+        visuals.widgets.noninteractive.fg_stroke.color = palette.text;
+        visuals.widgets.noninteractive.bg_stroke.color = palette.overlay0;
+        visuals.widgets.inactive.bg_fill = palette.surface0;
+        visuals.widgets.inactive.fg_stroke.color = palette.text;
+        visuals.widgets.inactive.bg_stroke.color = palette.overlay0;
+        visuals.widgets.hovered.bg_fill = palette.surface1;
+        visuals.widgets.hovered.fg_stroke.color = palette.text;
+        visuals.widgets.hovered.bg_stroke.color = palette.accent_border;
+        visuals.widgets.active.bg_fill = palette.surface2;
+        visuals.widgets.active.fg_stroke.color = palette.text;
+        visuals.widgets.active.bg_stroke.color = palette.accent_border;
+        visuals.widgets.open.bg_fill = palette.surface1;
+        visuals.widgets.open.fg_stroke.color = palette.text;
+        visuals.widgets.open.bg_stroke.color = palette.accent_border;
+        visuals.selection.bg_fill = palette.accent;
+        visuals.selection.stroke.color = palette.text;
+        visuals.hyperlink_color = palette.accent;
+        visuals.warn_fg_color = palette.warning;
+        visuals.error_fg_color = palette.danger;
+        visuals
+    }
+
+    fn theme_palette(&self) -> ThemePalette {
+        ThemePalette::from_theme(self.user_preferences.theme)
+    }
+
     fn handle_dropped_files(&mut self, ctx: &egui::Context) {
         let dropped_files = ctx.input(|input| input.raw.dropped_files.clone());
         if dropped_files.is_empty() {
@@ -192,9 +252,10 @@ impl RenameApp {
     }
     fn left_sidebar(&mut self, ui: &mut egui::Ui) {
         let sidebar_width = 110.0;
+        let palette = self.theme_palette();
         let frame = Frame::none()
-            .fill(Color32::from_gray(240))
-            .stroke(Stroke::new(1.0, Color32::from_gray(200)))
+            .fill(palette.mantle)
+            .stroke(Stroke::new(1.0, palette.overlay0))
             .rounding(egui::Rounding::same(4.0))
             .inner_margin(egui::Margin::symmetric(6.0, 10.0));
 
@@ -218,16 +279,17 @@ impl RenameApp {
     }
 
     fn left_nav_button(&mut self, ui: &mut egui::Ui, id: LeftNav, icon: &str, label: &str) {
+        let palette = self.theme_palette();
         let is_active = self.active_left_nav == id;
         let fill = if is_active {
-            Color32::from_rgb(205, 225, 248)
+            palette.surface1
         } else {
-            Color32::from_gray(248)
+            palette.surface0
         };
         let stroke = if is_active {
-            Stroke::new(1.5, Color32::from_rgb(90, 130, 200))
+            Stroke::new(1.5, palette.accent_border)
         } else {
-            Stroke::new(1.0, Color32::from_gray(200))
+            Stroke::new(1.0, palette.overlay0)
         };
 
         let response = ui.add_sized(
@@ -235,7 +297,7 @@ impl RenameApp {
             Button::new(
                 RichText::new(format!("{icon}\n{label}"))
                     .size(12.0)
-                    .color(Color32::from_gray(20)),
+                    .color(palette.text),
             )
             .wrap(true)
             .fill(fill)
@@ -363,6 +425,7 @@ impl RenameApp {
     }
 
     fn settings_content(&mut self, ui: &mut egui::Ui) {
+        let palette = self.theme_palette();
         ui.add_space(8.0);
         let title = RichText::new("Settings").font(FontId::proportional(28.0));
         ui.allocate_ui_with_layout(
@@ -379,8 +442,8 @@ impl RenameApp {
         ui.vertical(|ui| {
             let available_width = ui.available_width();
             let menu_frame = Frame::none()
-                .fill(Color32::from_gray(245))
-                .stroke(Stroke::new(1.0, Color32::from_gray(200)))
+                .fill(palette.mantle)
+                .stroke(Stroke::new(1.0, palette.overlay0))
                 .rounding(egui::Rounding::same(6.0))
                 .inner_margin(egui::Margin::symmetric(8.0, 8.0));
 
@@ -398,20 +461,25 @@ impl RenameApp {
             ui.add_space(12.0);
 
             Frame::none()
-                .fill(Color32::from_gray(250))
-                .stroke(Stroke::new(1.0, Color32::from_gray(200)))
+                .fill(palette.base)
+                .stroke(Stroke::new(1.0, palette.overlay0))
                 .rounding(egui::Rounding::same(6.0))
                 .inner_margin(egui::Margin::symmetric(12.0, 12.0))
                 .show(ui, |ui| {
                     ui.set_min_width(available_width);
                     ScrollArea::vertical()
                         .auto_shrink([false, false])
-                        .show(ui, |ui| match self.active_settings_section {
-                            SettingsSection::Program => self.settings_program(ui),
-                            SettingsSection::Language => self.settings_language(ui),
-                            SettingsSection::Appearance => self.settings_appearance(ui),
-                            SettingsSection::Experience => self.settings_experience(ui),
-                            SettingsSection::Utilities => self.settings_utilities(ui),
+                        .show(ui, |ui| {
+                            let settings_changed = match self.active_settings_section {
+                                SettingsSection::Program => self.settings_program(ui),
+                                SettingsSection::Language => self.settings_language(ui),
+                                SettingsSection::Appearance => self.settings_appearance(ui),
+                                SettingsSection::Experience => self.settings_experience(ui),
+                                SettingsSection::Utilities => self.settings_utilities(ui),
+                            };
+                            if settings_changed {
+                                self.user_preferences.save();
+                            }
                         });
                 });
         });
@@ -424,16 +492,17 @@ impl RenameApp {
         icon: &str,
         label: &str,
     ) {
+        let palette = self.theme_palette();
         let is_active = self.active_settings_section == section;
         let fill = if is_active {
-            Color32::from_rgb(215, 230, 250)
+            palette.surface1
         } else {
-            Color32::from_gray(248)
+            palette.surface0
         };
         let stroke = if is_active {
-            Stroke::new(1.5, Color32::from_rgb(90, 130, 200))
+            Stroke::new(1.5, palette.accent_border)
         } else {
-            Stroke::new(1.0, Color32::from_gray(210))
+            Stroke::new(1.0, palette.overlay0)
         };
         let response = ui.add_sized(
             Vec2::new(ui.available_width(), 34.0),
@@ -446,37 +515,47 @@ impl RenameApp {
         }
     }
 
-    fn settings_program(&mut self, ui: &mut egui::Ui) {
+    fn settings_program(&mut self, ui: &mut egui::Ui) -> bool {
+        let palette = self.theme_palette();
+        let mut changed = false;
         ui.label(RichText::new("Program").font(FontId::proportional(18.0)));
         ui.add_space(6.0);
-        ui.checkbox(
-            &mut self.user_preferences.open_last_session,
-            "Restore last session on launch",
-        );
-        ui.checkbox(
-            &mut self.user_preferences.auto_save_queue,
-            "Auto-save rename queue",
-        );
-        ui.checkbox(
-            &mut self.user_preferences.check_updates_on_launch,
-            "Check for updates on launch",
-        );
-        ui.checkbox(
-            &mut self.user_preferences.confirm_before_rename,
-            "Ask for confirmation before renaming",
-        );
+        changed |= ui
+            .checkbox(
+                &mut self.user_preferences.open_last_session,
+                "Restore last session on launch",
+            )
+            .changed();
+        changed |= ui
+            .checkbox(
+                &mut self.user_preferences.auto_save_queue,
+                "Auto-save rename queue",
+            )
+            .changed();
+        changed |= ui
+            .checkbox(
+                &mut self.user_preferences.check_updates_on_launch,
+                "Check for updates on launch",
+            )
+            .changed();
+        changed |= ui
+            .checkbox(
+                &mut self.user_preferences.confirm_before_rename,
+                "Ask for confirmation before renaming",
+            )
+            .changed();
         ui.add_space(12.0);
         ui.label(RichText::new("API configuration").strong());
         ui.label(
             RichText::new("Keys are loaded from ~/.kayabot/config.toml or environment variables.")
                 .size(11.0)
-                .color(Color32::from_gray(120)),
+                .color(palette.subtext0),
         );
         if let Some(path) = ApiConfig::config_path() {
             ui.label(
                 RichText::new(format!("Config path: {}", path.display()))
                     .size(11.0)
-                    .color(Color32::from_gray(120)),
+                    .color(palette.subtext0),
             );
         }
         ui.add_space(6.0);
@@ -485,26 +564,34 @@ impl RenameApp {
         self.settings_status_row(ui, "OMDB", self.api_config.omdb_configured());
         self.settings_status_row(ui, "AniDB", self.api_config.anidb_configured());
         self.settings_status_row(ui, "TVMaze", self.api_config.tvmaze_configured());
+        changed
     }
 
-    fn settings_language(&mut self, ui: &mut egui::Ui) {
+    fn settings_language(&mut self, ui: &mut egui::Ui) -> bool {
+        let mut changed = false;
         ui.label(RichText::new("Language").font(FontId::proportional(18.0)));
         ui.add_space(6.0);
-        egui::ComboBox::from_id_source("settings_language")
+        let language_response = egui::ComboBox::from_id_source("settings_language")
             .selected_text(self.user_preferences.language.label())
             .show_ui(ui, |ui| {
                 for language in LanguageChoice::all() {
-                    ui.selectable_value(&mut self.user_preferences.language, language, language.label());
+                    ui.selectable_value(
+                        &mut self.user_preferences.language,
+                        language,
+                        language.label(),
+                    );
                 }
             });
-        egui::ComboBox::from_id_source("settings_region")
+        changed |= language_response.response.changed();
+        let region_response = egui::ComboBox::from_id_source("settings_region")
             .selected_text(self.user_preferences.region.label())
             .show_ui(ui, |ui| {
                 for region in RegionChoice::all() {
                     ui.selectable_value(&mut self.user_preferences.region, region, region.label());
                 }
             });
-        egui::ComboBox::from_id_source("settings_date_format")
+        changed |= region_response.response.changed();
+        let date_response = egui::ComboBox::from_id_source("settings_date_format")
             .selected_text(self.user_preferences.date_format.label())
             .show_ui(ui, |ui| {
                 for format in DateFormat::all() {
@@ -515,19 +602,23 @@ impl RenameApp {
                     );
                 }
             });
+        changed |= date_response.response.changed();
+        changed
     }
 
-    fn settings_appearance(&mut self, ui: &mut egui::Ui) {
+    fn settings_appearance(&mut self, ui: &mut egui::Ui) -> bool {
+        let mut changed = false;
         ui.label(RichText::new("Appearance").font(FontId::proportional(18.0)));
         ui.add_space(6.0);
-        egui::ComboBox::from_id_source("settings_theme")
+        let theme_response = egui::ComboBox::from_id_source("settings_theme")
             .selected_text(self.user_preferences.theme.label())
             .show_ui(ui, |ui| {
                 for theme in ThemeChoice::all() {
                     ui.selectable_value(&mut self.user_preferences.theme, theme, theme.label());
                 }
             });
-        egui::ComboBox::from_id_source("settings_density")
+        changed |= theme_response.response.changed();
+        let density_response = egui::ComboBox::from_id_source("settings_density")
             .selected_text(self.user_preferences.density.label())
             .show_ui(ui, |ui| {
                 for density in DensityChoice::all() {
@@ -538,68 +629,96 @@ impl RenameApp {
                     );
                 }
             });
-        ui.checkbox(
-            &mut self.user_preferences.show_section_headers,
-            "Show section headers",
-        );
-        ui.checkbox(
-            &mut self.user_preferences.animate_transitions,
-            "Animate transitions",
-        );
+        changed |= density_response.response.changed();
+        changed |= ui
+            .checkbox(
+                &mut self.user_preferences.show_section_headers,
+                "Show section headers",
+            )
+            .changed();
+        changed |= ui
+            .checkbox(
+                &mut self.user_preferences.animate_transitions,
+                "Animate transitions",
+            )
+            .changed();
+        changed
     }
 
-    fn settings_experience(&mut self, ui: &mut egui::Ui) {
+    fn settings_experience(&mut self, ui: &mut egui::Ui) -> bool {
+        let mut changed = false;
         ui.label(RichText::new("Experience").font(FontId::proportional(18.0)));
         ui.add_space(6.0);
-        ui.checkbox(
-            &mut self.user_preferences.show_tips,
-            "Show tips and onboarding hints",
-        );
-        ui.checkbox(
-            &mut self.user_preferences.enable_sound_cues,
-            "Enable subtle sound cues",
-        );
-        ui.checkbox(
-            &mut self.user_preferences.show_status_toasts,
-            "Show status notifications",
-        );
-        ui.checkbox(
-            &mut self.user_preferences.highlight_matches,
-            "Highlight confident matches",
-        );
+        changed |= ui
+            .checkbox(
+                &mut self.user_preferences.show_tips,
+                "Show tips and onboarding hints",
+            )
+            .changed();
+        changed |= ui
+            .checkbox(
+                &mut self.user_preferences.enable_sound_cues,
+                "Enable subtle sound cues",
+            )
+            .changed();
+        changed |= ui
+            .checkbox(
+                &mut self.user_preferences.show_status_toasts,
+                "Show status notifications",
+            )
+            .changed();
+        changed |= ui
+            .checkbox(
+                &mut self.user_preferences.highlight_matches,
+                "Highlight confident matches",
+            )
+            .changed();
+        changed
     }
 
-    fn settings_utilities(&mut self, ui: &mut egui::Ui) {
+    fn settings_utilities(&mut self, ui: &mut egui::Ui) -> bool {
+        let mut changed = false;
         ui.label(RichText::new("Utilities").font(FontId::proportional(18.0)));
         ui.add_space(6.0);
-        ui.checkbox(
-            &mut self.user_preferences.enable_quick_actions,
-            "Enable quick actions toolbar",
-        );
-        ui.checkbox(
-            &mut self.user_preferences.confirm_before_clearing,
-            "Confirm before clearing lists",
-        );
-        ui.checkbox(
-            &mut self.user_preferences.copy_results_to_clipboard,
-            "Copy results to clipboard after rename",
-        );
-        ui.checkbox(
-            &mut self.user_preferences.keep_logs,
-            "Keep local activity logs",
-        );
+        changed |= ui
+            .checkbox(
+                &mut self.user_preferences.enable_quick_actions,
+                "Enable quick actions toolbar",
+            )
+            .changed();
+        changed |= ui
+            .checkbox(
+                &mut self.user_preferences.confirm_before_clearing,
+                "Confirm before clearing lists",
+            )
+            .changed();
+        changed |= ui
+            .checkbox(
+                &mut self.user_preferences.copy_results_to_clipboard,
+                "Copy results to clipboard after rename",
+            )
+            .changed();
+        changed |= ui
+            .checkbox(
+                &mut self.user_preferences.keep_logs,
+                "Keep local activity logs",
+            )
+            .changed();
         ui.add_space(8.0);
         if ui.button("Reset preferences to defaults").clicked() {
             self.user_preferences = UserPreferences::default();
+            changed = true;
         }
+        changed
     }
 
     fn settings_status_row(&self, ui: &mut egui::Ui, label: &str, configured: bool) {
+        let palette = self.theme_palette();
         let status = if configured { "Configured" } else { "Missing" };
         let color = if configured {
-            Color32::from_rgb(60, 130, 90)
+            palette.success
         } else {
-            Color32::from_rgb(180, 40, 40)
+            palette.danger
         };
         ui.horizontal(|ui| {
             ui.label(format!("{label}:"));
@@ -637,9 +756,10 @@ impl RenameApp {
         F: FnOnce(&mut RenameApp, &mut egui::Ui),
         T: ListItem,
     {
+        let palette = app.theme_palette();
         let panel_frame = Frame::none()
-            .fill(Color32::from_gray(245))
-            .stroke(Stroke::new(1.0, Color32::from_gray(180)))
+            .fill(palette.mantle)
+            .stroke(Stroke::new(1.0, palette.overlay0))
             .rounding(egui::Rounding::same(4.0))
             .inner_margin(egui::Margin::symmetric(8.0, 8.0));
 
@@ -658,8 +778,8 @@ impl RenameApp {
                         let toolbar_height = 34.0;
                         let list_height = (remaining - toolbar_height).max(120.0);
                         Frame::none()
-                            .stroke(Stroke::new(1.0, Color32::from_gray(180)))
-                            .fill(Color32::WHITE)
+                            .stroke(Stroke::new(1.0, palette.overlay0))
+                            .fill(palette.base)
                             .rounding(egui::Rounding::same(2.0))
                             .show(ui, |ui| {
                                 ui.set_min_height(list_height);
@@ -777,9 +897,10 @@ impl RenameApp {
     }
 
     fn center_buttons(&mut self, ui: &mut egui::Ui) {
+        let palette = self.theme_palette();
         let frame = Frame::none()
-            .fill(Color32::from_gray(245))
-            .stroke(Stroke::new(1.0, Color32::from_gray(200)))
+            .fill(palette.mantle)
+            .stroke(Stroke::new(1.0, palette.overlay0))
             .rounding(egui::Rounding::same(4.0));
 
         ui.allocate_ui_with_layout(
@@ -804,12 +925,13 @@ impl RenameApp {
     }
 
     fn large_action_button(&mut self, ui: &mut egui::Ui, icon: &str, label: &str) {
+        let palette = self.theme_palette();
         let response = ui.add_sized(
             Vec2::new(70.0, 70.0),
             Button::new(RichText::new(format!("{icon}\n{label}")).size(14.0))
                 .wrap(true)
-                .fill(Color32::from_gray(250))
-                .stroke(Stroke::new(1.0, Color32::from_gray(160))),
+                .fill(palette.base)
+                .stroke(Stroke::new(1.0, palette.overlay0)),
         );
         if response.clicked() {
             println!("Action clicked: {label}");
@@ -931,6 +1053,7 @@ impl RenameApp {
     }
 
     fn fetch_data_panel(&mut self, ui: &mut egui::Ui) {
+        let palette = self.theme_palette();
         ui.group(|ui| {
             ui.label(RichText::new("Fetch Inputs").size(12.0));
             ui.horizontal(|ui| {
@@ -961,17 +1084,15 @@ impl RenameApp {
             }
             if let Some(message) = &self.detection_notice {
                 ui.add_space(4.0);
-                ui.label(RichText::new(message).color(Color32::from_rgb(150, 110, 30)));
+                ui.label(RichText::new(message).color(palette.warning));
             }
 
             match &self.fetch_status {
                 FetchStatus::Loading => {
-                    ui.label(
-                        RichText::new("Loading metadata...").color(Color32::from_rgb(80, 80, 160)),
-                    );
+                    ui.label(RichText::new("Loading metadata...").color(palette.accent));
                 }
                 FetchStatus::Error(message) => {
-                    ui.label(RichText::new(message).color(Color32::from_rgb(160, 40, 40)));
+                    ui.label(RichText::new(message).color(palette.danger));
                 }
                 _ => {}
             }
@@ -992,7 +1113,7 @@ impl RenameApp {
             ui.label(
                 RichText::new(format_label)
                     .size(10.0)
-                    .color(Color32::from_gray(120)),
+                    .color(palette.subtext0),
             );
             ui.add_space(6.0);
             ui.label(RichText::new("Proposed Results").size(12.0));
@@ -1007,13 +1128,11 @@ impl RenameApp {
                     }
                 ))
                 .size(10.0)
-                .color(Color32::from_gray(110)),
+                .color(palette.subtext0),
             );
             if self.content_type == ContentType::Series {
                 if self.episode_matches.is_empty() {
-                    ui.label(
-                        RichText::new("No episodes loaded yet.").color(Color32::from_gray(100)),
-                    );
+                    ui.label(RichText::new("No episodes loaded yet.").color(palette.subtext0));
                 } else {
                     ScrollArea::vertical().max_height(120.0).show(ui, |ui| {
                         for episode in &self.episode_matches {
@@ -1025,7 +1144,7 @@ impl RenameApp {
                     });
                 }
             } else if self.title_matches.is_empty() {
-                ui.label(RichText::new("No title matches yet.").color(Color32::from_gray(100)));
+                ui.label(RichText::new("No title matches yet.").color(palette.subtext0));
             } else {
                 ScrollArea::vertical().max_height(120.0).show(ui, |ui| {
                     for title in &self.title_matches {
@@ -1071,6 +1190,7 @@ impl RenameApp {
                     });
                     ui.separator();
                     ui.vertical(|ui| {
+                        let palette = self.theme_palette();
                         ui.label(RichText::new("Source détaillée").strong());
                         ui.add_space(4.0);
                         if let Some(title) = self.selected_title_match() {
@@ -1078,7 +1198,7 @@ impl RenameApp {
                         } else {
                             ui.label(
                                 RichText::new("Sélectionnez un match.")
-                                    .color(Color32::from_gray(110)),
+                                    .color(palette.subtext0),
                             );
                         }
                     });
@@ -1100,12 +1220,37 @@ impl RenameApp {
     }
 
     fn new_names_rows(&self) -> Vec<NewNameRow> {
+        let palette = self.theme_palette();
         match &self.rename_ui_state {
-            RenameUiState::Loading => vec![NewNameRow::status("Chargement des résultats…")],
+            RenameUiState::Loading => vec![NewNameRow {
+                name: "Chargement des résultats…".to_string(),
+                status: None,
+                original: None,
+                confidence: None,
+                candidate_count: None,
+                status_color: None,
+                muted_color: palette.subtext0,
+            }],
             RenameUiState::Error(message) => {
-                vec![NewNameRow::status(format!("Erreur: {message}"))]
+                vec![NewNameRow {
+                    name: format!("Erreur: {message}"),
+                    status: None,
+                    original: None,
+                    confidence: None,
+                    candidate_count: None,
+                    status_color: None,
+                    muted_color: palette.subtext0,
+                }]
             }
-            RenameUiState::Empty => vec![NewNameRow::status("Aucun résultat disponible.")],
+            RenameUiState::Empty => vec![NewNameRow {
+                name: "Aucun résultat disponible.".to_string(),
+                status: None,
+                original: None,
+                confidence: None,
+                candidate_count: None,
+                status_color: None,
+                muted_color: palette.subtext0,
+            }],
             RenameUiState::Success(_) => self
                 .match_results
                 .iter()
@@ -1115,28 +1260,35 @@ impl RenameApp {
                     original: Some(result.original.clone()),
                     confidence: Some(result.confidence),
                     candidate_count: Some(result.candidates.len()),
+                    status_color: Some(match result.status {
+                        matching::MatchStatus::Ok => palette.success,
+                        matching::MatchStatus::Ambiguous => palette.warning,
+                        matching::MatchStatus::Error => palette.danger,
+                    }),
+                    muted_color: palette.subtext0,
                 })
                 .collect(),
         }
     }
 
     fn rename_status_message(&self, ui: &mut egui::Ui) {
+        let palette = self.theme_palette();
         let (message, color) = match &self.rename_ui_state {
             RenameUiState::Loading => (
                 "Statut: chargement…".to_string(),
-                Color32::from_rgb(80, 80, 160),
+                palette.accent,
             ),
             RenameUiState::Success(count) => (
                 format!("Statut: succès — {count} résultat(s) prêts."),
-                Color32::from_rgb(60, 130, 90),
+                palette.success,
             ),
             RenameUiState::Error(message) => (
                 format!("Statut: erreur — {message}"),
-                Color32::from_rgb(180, 40, 40),
+                palette.danger,
             ),
             RenameUiState::Empty => (
                 "Statut: aucun résultat pour le moment.".to_string(),
-                Color32::from_gray(110),
+                palette.subtext0,
             ),
         };
         ui.label(RichText::new(message).color(color));
@@ -1266,6 +1418,7 @@ impl RenameApp {
     }
 
     fn render_title_match_details(&self, ui: &mut egui::Ui, title: &TitleMatch) {
+        let palette = self.theme_palette();
         ui.label(format!("Titre: {}", title.name));
         ui.label(format!("Source: {}", title.source));
         ui.label(format!(
@@ -1324,7 +1477,7 @@ impl RenameApp {
         if let Some(synopsis) = title.extras.synopsis.as_deref() {
             ui.add_space(4.0);
             ui.label(RichText::new("Synopsis").strong());
-            ui.label(RichText::new(synopsis).size(10.0).color(Color32::from_gray(120)));
+            ui.label(RichText::new(synopsis).size(10.0).color(palette.subtext0));
         }
     }
 }
@@ -1423,7 +1576,8 @@ impl ConfigFile {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 enum LanguageChoice {
     System,
     English,
@@ -1451,7 +1605,8 @@ impl LanguageChoice {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 enum RegionChoice {
     Auto,
     France,
@@ -1479,7 +1634,8 @@ impl RegionChoice {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 enum DateFormat {
     System,
     DdMmYyyy,
@@ -1507,28 +1663,149 @@ impl DateFormat {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 enum ThemeChoice {
     System,
-    Light,
-    Dark,
+    Latte,
+    Frappe,
+    Macchiato,
+    Mocha,
 }
 
 impl ThemeChoice {
     fn label(self) -> &'static str {
         match self {
             ThemeChoice::System => "System",
-            ThemeChoice::Light => "Light",
-            ThemeChoice::Dark => "Dark",
+            ThemeChoice::Latte => "Latte",
+            ThemeChoice::Frappe => "Frappé",
+            ThemeChoice::Macchiato => "Macchiato",
+            ThemeChoice::Mocha => "Mocha",
         }
     }
 
-    fn all() -> [Self; 3] {
-        [ThemeChoice::System, ThemeChoice::Light, ThemeChoice::Dark]
+    fn all() -> [Self; 5] {
+        [
+            ThemeChoice::System,
+            ThemeChoice::Latte,
+            ThemeChoice::Frappe,
+            ThemeChoice::Macchiato,
+            ThemeChoice::Mocha,
+        ]
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
+struct ThemePalette {
+    base: Color32,
+    mantle: Color32,
+    crust: Color32,
+    surface0: Color32,
+    surface1: Color32,
+    surface2: Color32,
+    overlay0: Color32,
+    text: Color32,
+    subtext0: Color32,
+    accent: Color32,
+    accent_border: Color32,
+    success: Color32,
+    warning: Color32,
+    danger: Color32,
+}
+
+impl ThemePalette {
+    fn from_theme(theme: ThemeChoice) -> Self {
+        match theme {
+            ThemeChoice::System => Self::system_default(),
+            ThemeChoice::Latte => Self {
+                base: Color32::from_rgb(239, 241, 245),
+                mantle: Color32::from_rgb(230, 233, 239),
+                crust: Color32::from_rgb(220, 224, 232),
+                surface0: Color32::from_rgb(204, 208, 218),
+                surface1: Color32::from_rgb(188, 192, 204),
+                surface2: Color32::from_rgb(172, 176, 190),
+                overlay0: Color32::from_rgb(156, 160, 176),
+                text: Color32::from_rgb(76, 79, 105),
+                subtext0: Color32::from_rgb(108, 111, 133),
+                accent: Color32::from_rgb(30, 102, 245),
+                accent_border: Color32::from_rgb(30, 102, 245),
+                success: Color32::from_rgb(64, 160, 43),
+                warning: Color32::from_rgb(223, 142, 29),
+                danger: Color32::from_rgb(210, 15, 57),
+            },
+            ThemeChoice::Frappe => Self {
+                base: Color32::from_rgb(48, 52, 70),
+                mantle: Color32::from_rgb(41, 44, 60),
+                crust: Color32::from_rgb(35, 38, 52),
+                surface0: Color32::from_rgb(65, 69, 89),
+                surface1: Color32::from_rgb(81, 87, 109),
+                surface2: Color32::from_rgb(98, 104, 128),
+                overlay0: Color32::from_rgb(115, 121, 148),
+                text: Color32::from_rgb(198, 208, 245),
+                subtext0: Color32::from_rgb(165, 173, 206),
+                accent: Color32::from_rgb(140, 170, 238),
+                accent_border: Color32::from_rgb(140, 170, 238),
+                success: Color32::from_rgb(166, 209, 137),
+                warning: Color32::from_rgb(239, 159, 118),
+                danger: Color32::from_rgb(231, 130, 132),
+            },
+            ThemeChoice::Macchiato => Self {
+                base: Color32::from_rgb(36, 39, 58),
+                mantle: Color32::from_rgb(30, 32, 48),
+                crust: Color32::from_rgb(24, 25, 38),
+                surface0: Color32::from_rgb(54, 58, 79),
+                surface1: Color32::from_rgb(73, 77, 100),
+                surface2: Color32::from_rgb(91, 96, 120),
+                overlay0: Color32::from_rgb(110, 115, 141),
+                text: Color32::from_rgb(202, 211, 245),
+                subtext0: Color32::from_rgb(165, 173, 203),
+                accent: Color32::from_rgb(138, 173, 244),
+                accent_border: Color32::from_rgb(138, 173, 244),
+                success: Color32::from_rgb(166, 218, 149),
+                warning: Color32::from_rgb(245, 169, 127),
+                danger: Color32::from_rgb(237, 135, 150),
+            },
+            ThemeChoice::Mocha => Self {
+                base: Color32::from_rgb(30, 30, 46),
+                mantle: Color32::from_rgb(24, 24, 37),
+                crust: Color32::from_rgb(17, 17, 27),
+                surface0: Color32::from_rgb(49, 50, 68),
+                surface1: Color32::from_rgb(69, 71, 90),
+                surface2: Color32::from_rgb(88, 91, 112),
+                overlay0: Color32::from_rgb(108, 112, 134),
+                text: Color32::from_rgb(205, 214, 244),
+                subtext0: Color32::from_rgb(166, 173, 200),
+                accent: Color32::from_rgb(137, 180, 250),
+                accent_border: Color32::from_rgb(137, 180, 250),
+                success: Color32::from_rgb(166, 227, 161),
+                warning: Color32::from_rgb(250, 179, 135),
+                danger: Color32::from_rgb(243, 139, 168),
+            },
+        }
+    }
+
+    fn system_default() -> Self {
+        Self {
+            base: Color32::from_gray(250),
+            mantle: Color32::from_gray(245),
+            crust: Color32::from_gray(230),
+            surface0: Color32::from_gray(248),
+            surface1: Color32::from_gray(240),
+            surface2: Color32::from_gray(230),
+            overlay0: Color32::from_gray(200),
+            text: Color32::from_gray(20),
+            subtext0: Color32::from_gray(120),
+            accent: Color32::from_rgb(90, 130, 200),
+            accent_border: Color32::from_rgb(90, 130, 200),
+            success: Color32::from_rgb(60, 130, 90),
+            warning: Color32::from_rgb(150, 110, 30),
+            danger: Color32::from_rgb(180, 40, 40),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 enum DensityChoice {
     Compact,
     Comfortable,
@@ -1553,7 +1830,7 @@ impl DensityChoice {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 struct UserPreferences {
     open_last_session: bool,
     auto_save_queue: bool,
@@ -1602,6 +1879,36 @@ impl Default for UserPreferences {
     }
 }
 
+impl UserPreferences {
+    fn load() -> Option<Self> {
+        let path = Self::preferences_path()?;
+        let contents = fs::read_to_string(path).ok()?;
+        toml::from_str(&contents).ok()
+    }
+
+    fn save(&self) {
+        let Some(path) = Self::preferences_path() else {
+            return;
+        };
+        if let Some(parent) = path.parent() {
+            if let Err(err) = fs::create_dir_all(parent) {
+                eprintln!("Failed to create preferences directory: {err}");
+                return;
+            }
+        }
+        let Ok(payload) = toml::to_string_pretty(self) else {
+            return;
+        };
+        if let Err(err) = fs::write(path, payload) {
+            eprintln!("Failed to save preferences: {err}");
+        }
+    }
+
+    fn preferences_path() -> Option<PathBuf> {
+        dirs::home_dir().map(|home| home.join(".kayabot").join("preferences.toml"))
+    }
+}
+
 trait ListItem {
     fn render(&self, ui: &mut egui::Ui);
 }
@@ -1618,27 +1925,23 @@ struct NewNameRow {
     original: Option<String>,
     confidence: Option<f32>,
     candidate_count: Option<usize>,
+    status_color: Option<Color32>,
+    muted_color: Color32,
 }
 
 impl NewNameRow {
-    fn status(message: impl Into<String>) -> Self {
-        Self {
-            name: message.into(),
-            status: None,
-            original: None,
-            confidence: None,
-            candidate_count: None,
-        }
-    }
 }
 
 impl ListItem for NewNameRow {
     fn render(&self, ui: &mut egui::Ui) {
         if let Some(status) = self.status {
             let (label, color) = match status {
-                matching::MatchStatus::Ok => ("ok", Color32::from_rgb(40, 140, 80)),
-                matching::MatchStatus::Ambiguous => ("ambiguous", Color32::from_rgb(180, 130, 30)),
-                matching::MatchStatus::Error => ("error", Color32::from_rgb(180, 40, 40)),
+                matching::MatchStatus::Ok => ("ok", self.status_color.unwrap_or(ui.visuals().hyperlink_color)),
+                matching::MatchStatus::Ambiguous => (
+                    "ambiguous",
+                    self.status_color.unwrap_or(ui.visuals().warn_fg_color),
+                ),
+                matching::MatchStatus::Error => ("error", self.status_color.unwrap_or(ui.visuals().error_fg_color)),
             };
             ui.vertical(|ui| {
                 ui.horizontal(|ui| {
@@ -1658,13 +1961,13 @@ impl ListItem for NewNameRow {
                     };
                     ui.label(
                         RichText::new(detail)
-                            .color(Color32::from_gray(120))
+                            .color(self.muted_color)
                             .size(10.0),
                     );
                 }
             });
         } else {
-            ui.label(RichText::new(&self.name).color(Color32::from_gray(120)));
+            ui.label(RichText::new(&self.name).color(self.muted_color));
         }
     }
 }
