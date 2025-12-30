@@ -58,7 +58,7 @@ fn match_single(filename: &str) -> MatchResult {
     }
 
     let metadata = candidates.first().cloned();
-    let mut confidence = if metadata.is_some() { 0.85 } else { 0.0 };
+    let mut confidence: f32 = if metadata.is_some() { 0.85 } else { 0.0 };
 
     if parsed.used_numeric_heuristic {
         confidence = confidence.min(0.65);

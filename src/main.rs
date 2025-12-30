@@ -68,7 +68,7 @@ impl Default for RenameApp {
         ]
         .into_iter()
         .map(String::from)
-        .collect();
+        .collect::<Vec<String>>();
 
         let new_names = vec![
             "~/Media/TV Shows/Alias/Season 01/Alias - S01E16 - The Prophecy",
@@ -90,7 +90,7 @@ impl Default for RenameApp {
         ]
         .into_iter()
         .map(String::from)
-        .collect();
+        .collect::<Vec<String>>();
 
         let match_results = matching::match_files(&original_files);
 
@@ -217,7 +217,7 @@ impl RenameApp {
                         .new_names
                         .iter()
                         .zip(self.match_results.iter())
-                        .map(|(name, result)| (name.clone(), *result))
+                        .map(|(name, result)| (name.clone(), result.clone()))
                         .collect::<Vec<_>>();
 
                     Self::list_panel(self, ui, "Original Files", left_width, &original_files, |_, ui| {
