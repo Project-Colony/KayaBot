@@ -161,10 +161,6 @@ impl eframe::App for RenameApp {
             });
         });
     }
-
-    fn on_exit(&mut self, _gl: Option<&glow::Context>) {
-        self.user_preferences.save();
-    }
 }
 
 impl RenameApp {
