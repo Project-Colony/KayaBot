@@ -593,13 +593,11 @@ impl RenameApp {
                         title.score
                     );
                     let selected = self.selected_title_id.as_deref() == Some(&title.id);
-                    ui.push_id(&title.id, |ui| {
-                        if ui.selectable_label(selected, label).clicked() {
-                            selected_id = Some(title.id.clone());
-                            should_fetch = self.content_type == ContentType::Series;
-                            should_close = true;
-                        }
-                    });
+                    if ui.selectable_label(selected, label).clicked() {
+                        selected_id = Some(title.id.clone());
+                        should_fetch = self.content_type == ContentType::Series;
+                        should_close = true;
+                    }
                 }
                 if let Some(selected_id) = selected_id {
                     self.selected_title_id = Some(selected_id);
