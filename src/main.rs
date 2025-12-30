@@ -1,3 +1,4 @@
+mod matching;
 mod metadata;
 
 use eframe::egui::{self, Button, Color32, FontId, Frame, Layout, RichText, ScrollArea, Stroke, Vec2};
@@ -33,6 +34,7 @@ struct RenameApp {
     active_left_nav: LeftNav,
     original_files: Vec<String>,
     new_names: Vec<String>,
+    match_results: Vec<matching::MatchResult>,
     content_type: ContentType,
     detected_series_name: String,
     fetch_status: FetchStatus,
@@ -90,10 +92,13 @@ impl Default for RenameApp {
         .map(String::from)
         .collect();
 
+        let match_results = matching::match_files(&original_files);
+
         Self {
             active_left_nav: LeftNav::Rename,
             original_files,
             new_names,
+            match_results,
             content_type: ContentType::Series,
             detected_series_name: "Alias".to_string(),
             fetch_status: FetchStatus::Idle,
@@ -208,7 +213,12 @@ impl RenameApp {
                     let left_width = (ui.available_width() - 120.0) * 0.5;
                     let right_width = left_width;
                     let original_files = self.original_files.clone();
-                    let new_names = self.new_names.clone();
+                    let match_rows = self
+                        .new_names
+                        .iter()
+                        .zip(self.match_results.iter())
+                        .map(|(name, result)| (name.clone(), *result))
+                        .collect::<Vec<_>>();
 
                     Self::list_panel(self, ui, "Original Files", left_width, &original_files, |_, ui| {
                         ui.add_space(6.0);
@@ -226,7 +236,7 @@ impl RenameApp {
                     self.center_buttons(ui);
                     ui.add_space(10.0);
 
-                    Self::list_panel(self, ui, "New Names", right_width, &new_names, |app, ui| {
+                    Self::list_panel(self, ui, "New Names", right_width, &match_rows, |app, ui| {
                         ui.add_space(6.0);
                         app.fetch_data_panel(ui);
                     }, |app, ui| {
@@ -262,18 +272,19 @@ impl RenameApp {
         );
     }
 
-    fn list_panel<C, F>(
+    fn list_panel<C, F, T>(
         app: &mut RenameApp,
         ui: &mut egui::Ui,
         title: &str,
         width: f32,
-        items: &[String],
+        items: &[T],
         content: C,
         toolbar: F,
     )
     where
         C: FnOnce(&mut RenameApp, &mut egui::Ui),
         F: FnOnce(&mut RenameApp, &mut egui::Ui),
+        T: ListItem,
     {
         let panel_frame = Frame::none()
             .fill(Color32::from_gray(245))
@@ -304,7 +315,7 @@ impl RenameApp {
                                     .auto_shrink([false, false])
                                     .show(ui, |ui| {
                                         for item in items {
-                                            ui.label(item);
+                                            item.render(ui);
                                         }
                                     });
                             });
@@ -537,6 +548,32 @@ impl RenameApp {
             open = false;
         }
         self.show_match_picker = open;
+    }
+}
+
+trait ListItem {
+    fn render(&self, ui: &mut egui::Ui);
+}
+
+impl ListItem for String {
+    fn render(&self, ui: &mut egui::Ui) {
+        ui.label(self);
+    }
+}
+
+impl ListItem for (String, matching::MatchResult) {
+    fn render(&self, ui: &mut egui::Ui) {
+        let (name, result) = self;
+        let (label, color) = match result.status {
+            matching::MatchStatus::Ok => ("ok", Color32::from_rgb(40, 140, 80)),
+            matching::MatchStatus::Ambiguous => ("ambiguous", Color32::from_rgb(180, 130, 30)),
+            matching::MatchStatus::Error => ("error", Color32::from_rgb(180, 40, 40)),
+        };
+        ui.horizontal(|ui| {
+            ui.label(name);
+            ui.add_space(6.0);
+            ui.label(RichText::new(label).color(color));
+        });
     }
 }
 
