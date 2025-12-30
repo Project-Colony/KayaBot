@@ -171,28 +171,21 @@ impl RenameApp {
                     let left_width = (ui.available_width() - 120.0) * 0.5;
                     let right_width = left_width;
 
-                    self.list_panel(
-                        ui,
-                        "Original Files",
-                        left_width,
-                        2.0,
-                        &self.original_files,
-                        |ui| {
-                            ui.horizontal(|ui| {
-                                ui.add_sized(Vec2::new(32.0, 26.0), Button::new("⬇"));
-                                ui.add_sized(Vec2::new(32.0, 26.0), Button::new("⬆"));
-                                ui.add_sized(Vec2::new(32.0, 26.0), Button::new("❌"));
-                                ui.add_sized(Vec2::new(70.0, 26.0), Button::new("📂 Load"));
-                                ui.add_sized(Vec2::new(32.0, 26.0), Button::new("🔄"));
-                            });
-                        },
-                    );
+                    self.list_panel(ui, "Original Files", left_width, &self.original_files, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.add_sized(Vec2::new(32.0, 26.0), Button::new("⬇"));
+                            ui.add_sized(Vec2::new(32.0, 26.0), Button::new("⬆"));
+                            ui.add_sized(Vec2::new(32.0, 26.0), Button::new("❌"));
+                            ui.add_sized(Vec2::new(70.0, 26.0), Button::new("📂 Load"));
+                            ui.add_sized(Vec2::new(32.0, 26.0), Button::new("🔄"));
+                        });
+                    });
 
                     ui.add_space(10.0);
                     self.center_buttons(ui);
                     ui.add_space(10.0);
 
-                    self.list_panel(ui, "New Names", right_width, 1.0, &self.new_names, |ui| {
+                    self.list_panel(ui, "New Names", right_width, &self.new_names, |ui| {
                         ui.horizontal(|ui| {
                             ui.add_sized(Vec2::new(32.0, 26.0), Button::new("⬇"));
                             ui.add_sized(Vec2::new(32.0, 26.0), Button::new("⬆"));
@@ -206,15 +199,7 @@ impl RenameApp {
         );
     }
 
-    fn list_panel<F>(
-        &self,
-        ui: &mut egui::Ui,
-        title: &str,
-        width: f32,
-        height_multiplier: f32,
-        items: &[String],
-        toolbar: F,
-    )
+    fn list_panel<F>(&self, ui: &mut egui::Ui, title: &str, width: f32, items: &[String], toolbar: F)
     where
         F: FnOnce(&mut egui::Ui),
     {
@@ -225,7 +210,7 @@ impl RenameApp {
             .inner_margin(egui::Margin::symmetric(8.0, 8.0));
 
         ui.allocate_ui_with_layout(
-            Vec2::new(width, ui.available_height() * height_multiplier),
+            Vec2::new(width, ui.available_height()),
             Layout::top_down(egui::Align::Min),
             |ui| {
                 ui.push_id(title, |ui| {
