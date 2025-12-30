@@ -36,6 +36,12 @@ pub fn parse_filename(filename: &str) -> ParsedName {
             break;
         }
 
+        if let Some((s, e)) = parse_named_season_episode(&tokens, index) {
+            season = Some(s);
+            episode = Some(e);
+            break;
+        }
+
         if let Some((s, e, heuristic)) = parse_numeric_episode(&lower) {
             season = Some(s);
             episode = Some(e);
@@ -110,6 +116,23 @@ fn parse_season_episode_pair(tokens: &[String], index: usize) -> Option<(u32, u3
     let second = tokens[index + 1].to_lowercase();
     let season = first.strip_prefix('s')?.parse::<u32>().ok()?;
     let episode = second.strip_prefix('e')?.parse::<u32>().ok()?;
+    Some((season, episode))
+}
+
+fn parse_named_season_episode(tokens: &[String], index: usize) -> Option<(u32, u32)> {
+    if index + 3 >= tokens.len() {
+        return None;
+    }
+    let first = tokens[index].to_lowercase();
+    if !matches!(first.as_str(), "season" | "saison") {
+        return None;
+    }
+    let season = tokens[index + 1].parse::<u32>().ok()?;
+    let third = tokens[index + 2].to_lowercase();
+    if !matches!(third.as_str(), "episode" | "ep" | "e") {
+        return None;
+    }
+    let episode = tokens[index + 3].parse::<u32>().ok()?;
     Some((season, episode))
 }
 

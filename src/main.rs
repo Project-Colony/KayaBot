@@ -61,6 +61,9 @@ struct RenameApp {
     metadata_provider: FileBotLikeProvider,
     rename_ui_state: RenameUiState,
     active_metadata_source: MetadataSource,
+    preferred_movie_source: MetadataSource,
+    preferred_series_source: MetadataSource,
+    detection_notice: Option<String>,
 }
 
 impl Default for RenameApp {
@@ -68,6 +71,8 @@ impl Default for RenameApp {
         let original_files = Vec::new();
         let match_results = Vec::new();
         let rename_ui_state = RenameUiState::Empty;
+        let mut metadata_provider = FileBotLikeProvider::new();
+        metadata_provider.set_source(MetadataSource::TheTvDb);
 
         Self {
             active_left_nav: LeftNav::Rename,
@@ -82,9 +87,12 @@ impl Default for RenameApp {
             show_match_picker: false,
             rename_feedback: None,
             format_options: FormatOptions::default(),
-            metadata_provider: FileBotLikeProvider::new(),
+            metadata_provider,
             rename_ui_state,
-            active_metadata_source: MetadataSource::TheMovieDb,
+            active_metadata_source: MetadataSource::TheTvDb,
+            preferred_movie_source: MetadataSource::TheMovieDb,
+            preferred_series_source: MetadataSource::TheTvDb,
+            detection_notice: None,
         }
     }
 }
@@ -380,6 +388,11 @@ impl RenameApp {
         self.episode_matches.clear();
         self.selected_title_id = None;
         self.rename_feedback = None;
+        self.detection_notice = None;
+        match content_type {
+            ContentType::Movie => self.preferred_movie_source = source,
+            ContentType::Series => self.preferred_series_source = source,
+        }
         self.refresh_rename_ui_state();
     }
 
@@ -422,6 +435,7 @@ impl RenameApp {
             println!("Action clicked: {label}");
             if label == "Match" {
                 self.match_results = matching::match_files(&self.original_files);
+                self.apply_content_detection();
                 self.rename_feedback = None;
                 self.refresh_rename_ui_state();
             } else if label == "Rename" {
@@ -517,6 +531,10 @@ impl RenameApp {
                         .desired_width(140.0),
                 );
             });
+            if let Some(message) = &self.detection_notice {
+                ui.add_space(4.0);
+                ui.label(RichText::new(message).color(Color32::from_rgb(150, 110, 30)));
+            }
 
             match &self.fetch_status {
                 FetchStatus::Loading => {
@@ -696,6 +714,39 @@ impl RenameApp {
         };
         if self.rename_ui_state != next_state {
             self.rename_ui_state = next_state;
+        }
+    }
+
+    fn apply_content_detection(&mut self) {
+        use matching::ContentGuess;
+
+        self.detection_notice = None;
+        match matching::guess_content_type(&self.match_results) {
+            ContentGuess::Series => {
+                let target_source = self.preferred_series_source;
+                if self.content_type != ContentType::Series
+                    || self.active_metadata_source != target_source
+                {
+                    self.switch_metadata_source(target_source, ContentType::Series);
+                }
+            }
+            ContentGuess::Movie => {
+                let target_source = self.preferred_movie_source;
+                if self.content_type != ContentType::Movie
+                    || self.active_metadata_source != target_source
+                {
+                    self.switch_metadata_source(target_source, ContentType::Movie);
+                }
+            }
+            ContentGuess::Ambiguous => {
+                self.detection_notice = Some(
+                    "Type ambigu détecté. Choisissez Film ou Série, puis la source.".to_string(),
+                );
+            }
+            ContentGuess::Unknown => {
+                self.detection_notice =
+                    Some("Aucun indice clair sur le type. Choisissez Film ou Série.".to_string());
+            }
         }
     }
 
