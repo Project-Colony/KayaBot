@@ -15,7 +15,7 @@ use metadata::providers::{
     anidb::AniDbClient, omdb::OmdbClient, thetvdb::TheTvDbClient, tmdb::TmdbClient,
     tvmaze::TvMazeClient,
 };
-use std::env;
+use std::{env, fs, path::PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LeftNav {
@@ -24,7 +24,7 @@ enum LeftNav {
     Subtitles,
     Sfv,
     Filter,
-    List,
+    Settings,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,6 +69,7 @@ struct RenameApp {
     preferred_series_source: MetadataSource,
     detection_notice: Option<String>,
     force_metadata_source: bool,
+    api_config: ApiConfig,
 }
 
 impl Default for RenameApp {
@@ -80,23 +81,23 @@ impl Default for RenameApp {
         let mut metadata_provider = MetadataPipeline::new(vec![
             (
                 MetadataSource::TheMovieDb,
-                Box::new(TmdbClient::new(api_config.tmdb_token)),
+                Box::new(TmdbClient::new(api_config.tmdb_token.clone())),
             ),
             (
                 MetadataSource::AniDb,
-                Box::new(AniDbClient::new(api_config.anidb_api_key)),
+                Box::new(AniDbClient::new(api_config.anidb_api_key.clone())),
             ),
             (
                 MetadataSource::TheTvDb,
-                Box::new(TheTvDbClient::new(api_config.tvdb_api_key)),
+                Box::new(TheTvDbClient::new(api_config.tvdb_api_key.clone())),
             ),
             (
                 MetadataSource::TvMaze,
-                Box::new(TvMazeClient::new(api_config.tvmaze_user_agent)),
+                Box::new(TvMazeClient::new(api_config.tvmaze_user_agent.clone())),
             ),
             (
                 MetadataSource::Omdb,
-                Box::new(OmdbClient::new(api_config.omdb_api_key)),
+                Box::new(OmdbClient::new(api_config.omdb_api_key.clone())),
             ),
         ]);
         metadata_provider.set_active_sources(vec![
@@ -125,6 +126,7 @@ impl Default for RenameApp {
             preferred_series_source: MetadataSource::TheTvDb,
             detection_notice: None,
             force_metadata_source: false,
+            api_config,
         }
     }
 }
@@ -196,7 +198,7 @@ impl RenameApp {
                     self.left_nav_button(ui, LeftNav::Subtitles, "💬", "Subtitles");
                     self.left_nav_button(ui, LeftNav::Sfv, "✅", "SFV");
                     self.left_nav_button(ui, LeftNav::Filter, "🧪", "Filter");
-                    self.left_nav_button(ui, LeftNav::List, "📋", "List");
+                    self.left_nav_button(ui, LeftNav::Settings, "⚙️", "Settings");
                 });
             },
         );
@@ -240,107 +242,186 @@ impl RenameApp {
     }
 
     fn main_content(&mut self, ctx: &egui::Context, ui: &mut egui::Ui) {
-        self.refresh_rename_ui_state();
         let available_width = ui.available_width();
         ui.allocate_ui_with_layout(
             Vec2::new(available_width, ui.available_height()),
             Layout::top_down(egui::Align::Min),
             |ui| {
-                ui.add_space(8.0);
-                let title = RichText::new("Rename").font(FontId::proportional(28.0));
-                ui.allocate_ui_with_layout(
-                    Vec2::new(ui.available_width(), 40.0),
-                    Layout::centered_and_justified(egui::Direction::LeftToRight),
-                    |ui| {
-                        ui.label(title);
-                    },
-                );
-
-                ui.add_space(4.0);
-                ui.separator();
-                ui.add_space(8.0);
-
-                ui.horizontal(|ui| {
-                    let left_width = (ui.available_width() - 120.0) * 0.5;
-                    let right_width = left_width;
-                    let original_files = self.original_files.clone();
-                    let match_rows = self.new_names_rows();
-
-                    Self::list_panel(
-                        self,
-                        ui,
-                        "original_files_panel",
-                        "Original Files",
-                        left_width,
-                        &original_files,
-                        |_, ui| {
-                            ui.add_space(6.0);
-                        },
-                        |_, ui| {
-                            ui.horizontal(|ui| {
-                                ui.add_sized(Vec2::new(32.0, 26.0), Button::new("⬇"));
-                                ui.add_sized(Vec2::new(32.0, 26.0), Button::new("⬆"));
-                                ui.add_sized(Vec2::new(32.0, 26.0), Button::new("❌"));
-                                ui.add_sized(Vec2::new(70.0, 26.0), Button::new("📂 Load"));
-                                ui.add_sized(Vec2::new(32.0, 26.0), Button::new("🔄"));
-                            });
-                        },
-                    );
-
-                    ui.add_space(10.0);
-                    self.center_buttons(ui);
-                    ui.add_space(10.0);
-
-                    Self::list_panel(
-                        self,
-                        ui,
-                        "new_names_panel",
-                        "New Names",
-                        right_width,
-                        &match_rows,
-                        |app, ui| {
-                            ui.add_space(6.0);
-                            app.fetch_data_panel(ui);
-                        },
-                        |app, ui| {
-                            ui.horizontal(|ui| {
-                                ui.add_sized(Vec2::new(32.0, 26.0), Button::new("⬇"));
-                                ui.add_sized(Vec2::new(32.0, 26.0), Button::new("⬆"));
-                                ui.add_sized(Vec2::new(70.0, 26.0), Button::new("📂 Load"));
-                                let fetch_label = match app.fetch_status {
-                                    FetchStatus::Loading => "Fetching...",
-                                    _ => "Fetch Data",
-                                };
-                                let fetch_clicked = ui
-                                    .add_enabled(
-                                        !matches!(app.fetch_status, FetchStatus::Loading),
-                                        Button::new(fetch_label),
-                                    )
-                                    .clicked();
-                                if fetch_clicked {
-                                    app.fetch_metadata();
-                                }
-                                let adjust_clicked = ui
-                                    .add_sized(Vec2::new(32.0, 26.0), Button::new("🔧"))
-                                    .clicked();
-                                if adjust_clicked {
-                                    app.show_match_picker = true;
-                                }
-                            });
-                        },
-                    );
-                });
-
-                ui.add_space(8.0);
-                ui.separator();
-                ui.add_space(4.0);
-                self.rename_status_message(ui);
-
-                if self.show_match_picker {
-                    self.match_picker_window(ctx);
+                match self.active_left_nav {
+                    LeftNav::Rename => self.rename_content(ctx, ui),
+                    LeftNav::Settings => self.settings_content(ui),
+                    LeftNav::Episodes | LeftNav::Subtitles | LeftNav::Sfv | LeftNav::Filter => {
+                        self.placeholder_content(ui)
+                    }
                 }
             },
         );
+    }
+
+    fn rename_content(&mut self, ctx: &egui::Context, ui: &mut egui::Ui) {
+        self.refresh_rename_ui_state();
+        ui.add_space(8.0);
+        let title = RichText::new("Rename").font(FontId::proportional(28.0));
+        ui.allocate_ui_with_layout(
+            Vec2::new(ui.available_width(), 40.0),
+            Layout::centered_and_justified(egui::Direction::LeftToRight),
+            |ui| {
+                ui.label(title);
+            },
+        );
+
+        ui.add_space(4.0);
+        ui.separator();
+        ui.add_space(8.0);
+
+        ui.horizontal(|ui| {
+            let left_width = (ui.available_width() - 120.0) * 0.5;
+            let right_width = left_width;
+            let original_files = self.original_files.clone();
+            let match_rows = self.new_names_rows();
+
+            Self::list_panel(
+                self,
+                ui,
+                "original_files_panel",
+                "Original Files",
+                left_width,
+                &original_files,
+                |_, ui| {
+                    ui.add_space(6.0);
+                },
+                |_, ui| {
+                    ui.horizontal(|ui| {
+                        ui.add_sized(Vec2::new(32.0, 26.0), Button::new("⬇"));
+                        ui.add_sized(Vec2::new(32.0, 26.0), Button::new("⬆"));
+                        ui.add_sized(Vec2::new(32.0, 26.0), Button::new("❌"));
+                        ui.add_sized(Vec2::new(70.0, 26.0), Button::new("📂 Load"));
+                        ui.add_sized(Vec2::new(32.0, 26.0), Button::new("🔄"));
+                    });
+                },
+            );
+
+            ui.add_space(10.0);
+            self.center_buttons(ui);
+            ui.add_space(10.0);
+
+            Self::list_panel(
+                self,
+                ui,
+                "new_names_panel",
+                "New Names",
+                right_width,
+                &match_rows,
+                |app, ui| {
+                    ui.add_space(6.0);
+                    app.fetch_data_panel(ui);
+                },
+                |app, ui| {
+                    ui.horizontal(|ui| {
+                        ui.add_sized(Vec2::new(32.0, 26.0), Button::new("⬇"));
+                        ui.add_sized(Vec2::new(32.0, 26.0), Button::new("⬆"));
+                        ui.add_sized(Vec2::new(70.0, 26.0), Button::new("📂 Load"));
+                        let fetch_label = match app.fetch_status {
+                            FetchStatus::Loading => "Fetching...",
+                            _ => "Fetch Data",
+                        };
+                        let fetch_clicked = ui
+                            .add_enabled(
+                                !matches!(app.fetch_status, FetchStatus::Loading),
+                                Button::new(fetch_label),
+                            )
+                            .clicked();
+                        if fetch_clicked {
+                            app.fetch_metadata();
+                        }
+                        let adjust_clicked = ui
+                            .add_sized(Vec2::new(32.0, 26.0), Button::new("🔧"))
+                            .clicked();
+                        if adjust_clicked {
+                            app.show_match_picker = true;
+                        }
+                    });
+                },
+            );
+        });
+
+        ui.add_space(8.0);
+        ui.separator();
+        ui.add_space(4.0);
+        self.rename_status_message(ui);
+
+        if self.show_match_picker {
+            self.match_picker_window(ctx);
+        }
+    }
+
+    fn settings_content(&mut self, ui: &mut egui::Ui) {
+        ui.add_space(8.0);
+        let title = RichText::new("Settings").font(FontId::proportional(28.0));
+        ui.allocate_ui_with_layout(
+            Vec2::new(ui.available_width(), 40.0),
+            Layout::centered_and_justified(egui::Direction::LeftToRight),
+            |ui| {
+                ui.label(title);
+            },
+        );
+        ui.add_space(4.0);
+        ui.separator();
+        ui.add_space(8.0);
+
+        ui.label("Future configuration options will live here.");
+        ui.add_space(10.0);
+
+        ui.group(|ui| {
+            ui.label(RichText::new("API configuration").strong());
+            ui.label(
+                RichText::new("Keys are loaded from ~/.kayabot/config.toml or environment variables.")
+                    .size(11.0)
+                    .color(Color32::from_gray(120)),
+            );
+            if let Some(path) = ApiConfig::config_path() {
+                ui.label(
+                    RichText::new(format!("Config path: {}", path.display()))
+                        .size(11.0)
+                        .color(Color32::from_gray(120)),
+                );
+            }
+            ui.add_space(6.0);
+            self.settings_status_row(ui, "TMDB", self.api_config.tmdb_configured());
+            self.settings_status_row(ui, "TVDB", self.api_config.tvdb_configured());
+            self.settings_status_row(ui, "OMDB", self.api_config.omdb_configured());
+            self.settings_status_row(ui, "AniDB", self.api_config.anidb_configured());
+            self.settings_status_row(ui, "TVMaze", self.api_config.tvmaze_configured());
+        });
+    }
+
+    fn settings_status_row(&self, ui: &mut egui::Ui, label: &str, configured: bool) {
+        let status = if configured { "Configured" } else { "Missing" };
+        let color = if configured {
+            Color32::from_rgb(60, 130, 90)
+        } else {
+            Color32::from_rgb(180, 40, 40)
+        };
+        ui.horizontal(|ui| {
+            ui.label(format!("{label}:"));
+            ui.label(RichText::new(status).color(color));
+        });
+    }
+
+    fn placeholder_content(&mut self, ui: &mut egui::Ui) {
+        ui.add_space(8.0);
+        let title = RichText::new("Coming soon").font(FontId::proportional(28.0));
+        ui.allocate_ui_with_layout(
+            Vec2::new(ui.available_width(), 40.0),
+            Layout::centered_and_justified(egui::Direction::LeftToRight),
+            |ui| {
+                ui.label(title);
+            },
+        );
+        ui.add_space(4.0);
+        ui.separator();
+        ui.add_space(8.0);
+        ui.label("This section is under construction.");
     }
 
     fn list_panel<C, F, T>(
@@ -1049,6 +1130,7 @@ impl RenameApp {
     }
 }
 
+#[derive(Debug, Clone)]
 struct ApiConfig {
     tmdb_token: String,
     tvdb_api_key: String,
@@ -1059,17 +1141,28 @@ struct ApiConfig {
 
 impl ApiConfig {
     fn from_env() -> Self {
-        let tmdb_token = env::var("KAYABOT_TMDB_BEARER_TOKEN")
-            .or_else(|_| env::var("KAYABOT_TMDB_API_KEY"))
+        let config = ConfigFile::load();
+        let tmdb_token = Self::env_value("KAYABOT_TMDB_BEARER_TOKEN")
+            .or_else(|| Self::env_value("KAYABOT_TMDB_API_KEY"))
+            .or_else(|| config.as_ref().and_then(|cfg| cfg.tmdb_bearer_token.clone()))
+            .or_else(|| config.as_ref().and_then(|cfg| cfg.tmdb_api_key.clone()))
             .unwrap_or_default();
-        let tvdb_api_key = env::var("KAYABOT_TVDB_API_KEY").unwrap_or_default();
-        let omdb_api_key = env::var("KAYABOT_OMDB_API_KEY").unwrap_or_default();
-        let anidb_api_key = env::var("KAYABOT_ANIDB_PASSWORD")
-            .or_else(|_| env::var("KAYABOT_ANIDB_API_KEY"))
+        let tvdb_api_key = Self::env_value("KAYABOT_TVDB_API_KEY")
+            .or_else(|| config.as_ref().and_then(|cfg| cfg.tvdb_api_key.clone()))
             .unwrap_or_default();
-        let tvmaze_user_agent = env::var("KAYABOT_TVMAZE_USER_AGENT")
-            .or_else(|_| env::var("KAYABOT_TVMAZE_API_KEY"))
-            .unwrap_or_else(|_| "KayaBot".to_string());
+        let omdb_api_key = Self::env_value("KAYABOT_OMDB_API_KEY")
+            .or_else(|| config.as_ref().and_then(|cfg| cfg.omdb_api_key.clone()))
+            .unwrap_or_default();
+        let anidb_api_key = Self::env_value("KAYABOT_ANIDB_PASSWORD")
+            .or_else(|| Self::env_value("KAYABOT_ANIDB_API_KEY"))
+            .or_else(|| config.as_ref().and_then(|cfg| cfg.anidb_password.clone()))
+            .or_else(|| config.as_ref().and_then(|cfg| cfg.anidb_api_key.clone()))
+            .unwrap_or_default();
+        let tvmaze_user_agent = Self::env_value("KAYABOT_TVMAZE_USER_AGENT")
+            .or_else(|| Self::env_value("KAYABOT_TVMAZE_API_KEY"))
+            .or_else(|| config.as_ref().and_then(|cfg| cfg.tvmaze_user_agent.clone()))
+            .or_else(|| config.as_ref().and_then(|cfg| cfg.tvmaze_api_key.clone()))
+            .unwrap_or_else(|| "KayaBot".to_string());
 
         Self {
             tmdb_token,
@@ -1078,6 +1171,56 @@ impl ApiConfig {
             anidb_api_key,
             tvmaze_user_agent,
         }
+    }
+
+    fn env_value(key: &str) -> Option<String> {
+        env::var(key)
+            .ok()
+            .and_then(|value| if value.trim().is_empty() { None } else { Some(value) })
+    }
+
+    fn config_path() -> Option<PathBuf> {
+        dirs::home_dir().map(|home| home.join(".kayabot").join("config.toml"))
+    }
+
+    fn tmdb_configured(&self) -> bool {
+        !self.tmdb_token.trim().is_empty()
+    }
+
+    fn tvdb_configured(&self) -> bool {
+        !self.tvdb_api_key.trim().is_empty()
+    }
+
+    fn omdb_configured(&self) -> bool {
+        !self.omdb_api_key.trim().is_empty()
+    }
+
+    fn anidb_configured(&self) -> bool {
+        !self.anidb_api_key.trim().is_empty()
+    }
+
+    fn tvmaze_configured(&self) -> bool {
+        !self.tvmaze_user_agent.trim().is_empty()
+    }
+}
+
+#[derive(Debug, Clone, serde::Deserialize, Default)]
+struct ConfigFile {
+    tmdb_bearer_token: Option<String>,
+    tmdb_api_key: Option<String>,
+    tvdb_api_key: Option<String>,
+    omdb_api_key: Option<String>,
+    anidb_password: Option<String>,
+    anidb_api_key: Option<String>,
+    tvmaze_user_agent: Option<String>,
+    tvmaze_api_key: Option<String>,
+}
+
+impl ConfigFile {
+    fn load() -> Option<Self> {
+        let path = ApiConfig::config_path()?;
+        let contents = fs::read_to_string(path).ok()?;
+        toml::from_str(&contents).ok()
     }
 }
 
