@@ -196,7 +196,6 @@ impl RenameApp {
                     Self::list_panel(
                         self,
                         ui,
-                        "original_files_panel",
                         "Original Files",
                         left_width,
                         &original_files,
@@ -221,7 +220,6 @@ impl RenameApp {
                     Self::list_panel(
                         self,
                         ui,
-                        "new_names_panel",
                         "New Names",
                         right_width,
                         &match_rows,
@@ -273,7 +271,6 @@ impl RenameApp {
     fn list_panel<C, F, T>(
         app: &mut RenameApp,
         ui: &mut egui::Ui,
-        panel_id: &str,
         title: &str,
         width: f32,
         items: &[T],
@@ -294,7 +291,7 @@ impl RenameApp {
             Vec2::new(width, ui.available_height()),
             Layout::top_down(egui::Align::Min),
             |ui| {
-                ui.push_id(panel_id, |ui| {
+                ui.push_id(title, |ui| {
                     let available_height = ui.available_height();
                     panel_frame.show(ui, |ui| {
                         ui.set_min_height(available_height);
@@ -311,7 +308,7 @@ impl RenameApp {
                             .show(ui, |ui| {
                                 ui.set_min_height(list_height);
                                 ScrollArea::vertical()
-                                    .id_source((panel_id, "list_scroll"))
+                                    .id_source("list_scroll")
                                     .auto_shrink([false, false])
                                     .show(ui, |ui| {
                                         for item in items {
