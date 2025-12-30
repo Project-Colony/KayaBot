@@ -46,6 +46,9 @@ impl TvMazeClient {
     }
 
     fn normalize_title(&self, show: TvMazeShow) -> TitleMatch {
+        let source_score = show.score;
+        let source_trust = 0.75;
+        let global_score = source_score * source_trust;
         TitleMatch {
             id: show.id.to_string(),
             name: show.name,
@@ -54,17 +57,40 @@ impl TvMazeClient {
                 .as_deref()
                 .and_then(|date| date.get(0..4))
                 .and_then(|year| year.parse::<u16>().ok()),
-            score: show.score,
+            source_score,
+            source_trust,
+            global_score,
             source: "TVmaze".to_string(),
+            extras: crate::metadata::models::MetadataExtras {
+                external_ids: crate::metadata::models::ExternalIds {
+                    tvmaze: Some(show.id.to_string()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
         }
     }
 
     fn normalize_episode(&self, episode: TvMazeEpisode) -> EpisodeMatch {
+        let source_score = 1.0;
+        let source_trust = 0.75;
+        let global_score = source_score * source_trust;
         EpisodeMatch {
             id: episode.id.to_string(),
             season: episode.season,
             episode: episode.number,
             title: episode.name,
+            source_score,
+            source_trust,
+            global_score,
+            source: "TVmaze".to_string(),
+            extras: crate::metadata::models::MetadataExtras {
+                external_ids: crate::metadata::models::ExternalIds {
+                    tvmaze: Some(episode.id.to_string()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
         }
     }
 

@@ -515,8 +515,8 @@ impl RenameApp {
                 self.title_matches = matches.clone();
                 self.active_metadata_source = self.metadata_provider.active_source();
                 if let Some(best) = matches.iter().max_by(|a, b| {
-                    a.score
-                        .partial_cmp(&b.score)
+                    a.global_score
+                        .partial_cmp(&b.global_score)
                         .unwrap_or(std::cmp::Ordering::Equal)
                 }) {
                     self.selected_title_id = Some(best.id.clone());
@@ -682,13 +682,14 @@ impl RenameApp {
                 let mut should_close = false;
                 for title in &self.title_matches {
                     let label = format!(
-                        "{}{} (score {:.2})",
+                        "{}{} (score {:.2}, trust {:.2})",
                         title.name,
                         title
                             .year
                             .map(|year| format!(" {year}"))
                             .unwrap_or_default(),
-                        title.score
+                        title.global_score,
+                        title.source_trust
                     );
                     let selected = self.selected_title_id.as_deref() == Some(&title.id);
                     if ui.selectable_label(selected, label).clicked() {
@@ -812,33 +813,38 @@ impl RenameApp {
         };
 
         match metadata {
-            matching::MatchMetadata::Series {
-                title,
+            matching::MatchMetadata::Series { title } => title
+                .clone()
+                .unwrap_or_else(|| "Unknown Series".to_string()),
+            matching::MatchMetadata::Episode {
+                series_title,
                 season,
                 episode,
+                episode_title,
             } => {
                 let series_name = if self.detected_series_name.trim().is_empty() {
-                    title
+                    series_title
                         .clone()
                         .unwrap_or_else(|| "Unknown Series".to_string())
                 } else {
                     self.detected_series_name.clone()
                 };
-                let episode_title = self
+                let resolved_title = self
                     .episode_matches
                     .iter()
                     .find(|episode_match| {
                         episode_match.season == *season && episode_match.episode == *episode
                     })
                     .map(|episode_match| episode_match.title.as_str())
-                    .or_else(|| title.as_deref());
+                    .or_else(|| episode_title.as_deref())
+                    .or_else(|| series_title.as_deref());
 
                 formatting::format_series_name(
                     SeriesFormatInput {
                         series: &series_name,
                         season: *season,
                         episode: *episode,
-                        title: episode_title,
+                        title: resolved_title,
                     },
                     self.format_options,
                 )
@@ -848,7 +854,7 @@ impl RenameApp {
                 formatting::format_movie_name(
                     MovieFormatInput {
                         title: movie_title,
-                        year: Some(*year),
+                        year: *year,
                     },
                     self.format_options,
                 )

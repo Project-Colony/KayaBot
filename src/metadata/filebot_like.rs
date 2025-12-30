@@ -77,12 +77,18 @@ impl FileBotLikeProvider {
         let mut matches = Vec::new();
         for (slug, record) in &self.dataset {
             if record.title.to_lowercase().contains(&key) {
+                let source_score = 0.92;
+                let source_trust = 0.8;
+                let global_score = source_score * source_trust;
                 matches.push(TitleMatch {
                     id: slug.clone(),
                     name: record.title.clone(),
                     year: record.year,
-                    score: 0.92,
+                    source_score,
+                    source_trust,
+                    global_score,
                     source: source.label().to_string(),
+                    extras: crate::metadata::models::MetadataExtras::default(),
                 });
             }
         }
@@ -179,11 +185,18 @@ impl MetadataProvider for FileBotLikeProvider {
             .get(&title_id.to_lowercase())
             .ok_or_else(|| MetadataError::NotFound(format!("No title id '{title_id}'.")))?;
 
+        let source_score = 1.0;
+        let source_trust = 0.8;
+        let global_score = source_score * source_trust;
         Ok(MovieMatch {
             id: title_id.to_string(),
             title: record.title.clone(),
             year: record.year,
+            source_score,
+            source_trust,
+            global_score,
             source: self.active_source.label().to_string(),
+            extras: crate::metadata::models::MetadataExtras::default(),
         })
     }
 }

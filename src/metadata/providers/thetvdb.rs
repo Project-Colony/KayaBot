@@ -56,30 +56,69 @@ impl TheTvDbClient {
     }
 
     fn normalize_title(&self, series: TheTvDbSeries) -> TitleMatch {
+        let source_score = series.score;
+        let source_trust = 0.9;
+        let global_score = source_score * source_trust;
         TitleMatch {
-            id: series.id,
+            id: series.id.clone(),
             name: series.name,
             year: series.year,
-            score: series.score,
+            source_score,
+            source_trust,
+            global_score,
             source: "TheTVDB".to_string(),
+            extras: crate::metadata::models::MetadataExtras {
+                external_ids: crate::metadata::models::ExternalIds {
+                    tvdb: Some(series.id),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
         }
     }
 
     fn normalize_episode(&self, episode: TheTvDbEpisode) -> EpisodeMatch {
+        let source_score = 1.0;
+        let source_trust = 0.9;
+        let global_score = source_score * source_trust;
         EpisodeMatch {
-            id: episode.id,
+            id: episode.id.clone(),
             season: episode.season,
             episode: episode.episode,
             title: episode.name,
+            source_score,
+            source_trust,
+            global_score,
+            source: "TheTVDB".to_string(),
+            extras: crate::metadata::models::MetadataExtras {
+                external_ids: crate::metadata::models::ExternalIds {
+                    tvdb: Some(episode.id),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
         }
     }
 
     fn normalize_movie(&self, details: TheTvDbMovieDetails) -> MovieMatch {
+        let source_score = 1.0;
+        let source_trust = 0.9;
+        let global_score = source_score * source_trust;
         MovieMatch {
-            id: details.id,
+            id: details.id.clone(),
             title: details.title,
             year: details.year,
+            source_score,
+            source_trust,
+            global_score,
             source: "TheTVDB".to_string(),
+            extras: crate::metadata::models::MetadataExtras {
+                external_ids: crate::metadata::models::ExternalIds {
+                    tvdb: Some(details.id),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
         }
     }
 

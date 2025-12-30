@@ -44,21 +44,48 @@ impl OmdbClient {
     }
 
     fn normalize_title(&self, item: OmdbSearchItem) -> TitleMatch {
+        let source_score = 0.7;
+        let source_trust = 0.7;
+        let global_score = source_score * source_trust;
         TitleMatch {
-            id: item.imdb_id,
+            id: item.imdb_id.clone(),
             name: item.title,
             year: item.year,
-            score: 0.7,
+            source_score,
+            source_trust,
+            global_score,
             source: "OMDb".to_string(),
+            extras: crate::metadata::models::MetadataExtras {
+                external_ids: crate::metadata::models::ExternalIds {
+                    imdb: Some(item.imdb_id.clone()),
+                    omdb: Some(item.imdb_id),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
         }
     }
 
     fn normalize_movie(&self, details: OmdbMovieDetails) -> MovieMatch {
+        let source_score = 0.7;
+        let source_trust = 0.7;
+        let global_score = source_score * source_trust;
         MovieMatch {
-            id: details.imdb_id,
+            id: details.imdb_id.clone(),
             title: details.title,
             year: details.year,
+            source_score,
+            source_trust,
+            global_score,
             source: "OMDb".to_string(),
+            extras: crate::metadata::models::MetadataExtras {
+                external_ids: crate::metadata::models::ExternalIds {
+                    imdb: Some(details.imdb_id.clone()),
+                    omdb: Some(details.imdb_id),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
         }
     }
 

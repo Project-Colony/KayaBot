@@ -38,7 +38,7 @@ Formats finaux (et fallbacks) :
 
 - `src/metadata/provider.rs` définit l'interface `MetadataProvider` et l'énumération `MetadataSource`.
 - `src/metadata/filebot_like.rs` fournit un provider en mémoire (dataset vide par défaut) et un cache local (`MetadataCache`).
-- `src/metadata/models.rs` définit les types `TitleMatch` et `EpisodeMatch`.
+- `src/metadata/models.rs` définit les types `TitleMatch`, `MovieMatch`, `EpisodeMatch` ainsi que les modèles normalisés (`NormalizedTitle`, `NormalizedEpisode`).
 
 #### Stratégie de sélection des sources
 
@@ -49,27 +49,27 @@ Formats finaux (et fallbacks) :
 
 Les tableaux ci-dessous listent les champs requis vs optionnels pour alimenter les formats cibles (modèles `NormalizedTitle` et `NormalizedEpisode`).
 
-##### Films (format cible : `Title`, `Release Year`, `IMDb ID`)
+##### Films (format cible : `Title`, `Release Year`, `IMDb ID`, extras)
 
 | Source | Requis | Optionnels |
 | --- | --- | --- |
-| TheMovieDB | `title`, `source_id` | `release_year`, `imdb_id` |
-| OMDb | `title`, `source_id` | `release_year`, `imdb_id` |
-| AniDB | `title`, `source_id` | `release_year`, `imdb_id` |
+| TheMovieDB | `title`, `source_id` | `release_year`, `imdb_id`, `extras.aliases`, `extras.language`, `extras.genres`, `extras.external_ids`, `extras.synopsis` |
+| OMDb | `title`, `source_id` | `release_year`, `imdb_id`, `extras.aliases`, `extras.language`, `extras.genres`, `extras.external_ids`, `extras.synopsis` |
+| AniDB | `title`, `source_id` | `release_year`, `imdb_id`, `extras.aliases`, `extras.language`, `extras.genres`, `extras.external_ids`, `extras.synopsis` |
 
-##### Séries / épisodes (format cible : `Series Title`, `Season`, `Episode`, `Episode Title`, `Release Year`, `IMDb ID`)
+##### Séries / épisodes (format cible : `Series Title`, `Season`, `Episode`, `Episode Title`, `Release Year`, `IMDb ID`, extras)
 
 | Source | Requis | Optionnels |
 | --- | --- | --- |
-| TheTVDB | `series_title`, `series_id`, `season`, `episode` | `episode_title`, `release_year`, `imdb_id` |
-| TVmaze | `series_title`, `series_id`, `season`, `episode` | `episode_title`, `release_year`, `imdb_id` |
-| AniDB | `series_title`, `series_id`, `season`, `episode` | `episode_title`, `release_year`, `imdb_id` |
+| TheTVDB | `series_title`, `series_id`, `season`, `episode` | `episode_title`, `release_year`, `imdb_id`, `extras.aliases`, `extras.language`, `extras.genres`, `extras.external_ids`, `extras.synopsis` |
+| TVmaze | `series_title`, `series_id`, `season`, `episode` | `episode_title`, `release_year`, `imdb_id`, `extras.aliases`, `extras.language`, `extras.genres`, `extras.external_ids`, `extras.synopsis` |
+| AniDB | `series_title`, `series_id`, `season`, `episode` | `episode_title`, `release_year`, `imdb_id`, `extras.aliases`, `extras.language`, `extras.genres`, `extras.external_ids`, `extras.synopsis` |
 
 Remarques :
 - Les films n'utilisent pas AniDB dans l'UI actuelle, mais la table fixe les champs attendus si l'intégration est ajoutée.
 - Les champs optionnels peuvent déclencher des fallbacks de formatage (ex: absence de `release_year` ou `episode_title`).
 
-#### Mapping source → format cible (normalisé)
+#### Mapping source → modèle interne (normalisé)
 
 Ce mapping décrit les correspondances minimales à appliquer lors de l'implémentation des adapters d'API.
 
@@ -78,16 +78,30 @@ Ce mapping décrit les correspondances minimales à appliquer lors de l'impléme
 - `title` → `title`
 - `release_date` → `release_year` (année extraite)
 - `imdb_id` → `imdb_id`
+- `original_title`/`also_known_as` → `extras.aliases`
+- `original_language` → `extras.language`
+- `genre_ids`/`genres[].name` → `extras.genres`
+- `external_ids.*` → `extras.external_ids`
+- `overview` → `extras.synopsis`
+- `vote_average` → `source_score`, combiné avec `source_trust` pour `global_score`
 
 ##### OMDb (film)
 - `imdbID` → `imdb_id` (et `source_id` si OMDb est la source primaire)
 - `Title` → `title`
 - `Year` → `release_year`
+- `Language` → `extras.language`
+- `Genre` → `extras.genres` (liste scindée par virgule)
+- `Plot` → `extras.synopsis`
+- `Ratings[]` → `source_score` (normalisé), combiné avec `source_trust` pour `global_score`
 
 ##### AniDB (film/série)
 - `anime_id` → `source_id` / `series_id`
 - `title` → `title` / `series_title`
 - `year` → `release_year`
+- `aliases` → `extras.aliases`
+- `language` → `extras.language`
+- `tags`/`genres` → `extras.genres`
+- `description` → `extras.synopsis`
 
 ##### TheTVDB (série/épisode)
 - `series.id` → `series_id`
@@ -96,6 +110,12 @@ Ce mapping décrit les correspondances minimales à appliquer lors de l'impléme
 - `episode.number` → `episode`
 - `episode.name` → `episode_title`
 - `episode.year` → `release_year`
+- `series.aliases[]` → `extras.aliases`
+- `series.language` → `extras.language`
+- `series.genres[]` → `extras.genres`
+- `series.overview` → `extras.synopsis`
+- `series.id`/`episode.id` → `extras.external_ids`
+- `series.score` → `source_score`, combiné avec `source_trust` pour `global_score`
 
 ##### TVmaze (série/épisode)
 - `show.id` → `series_id`
@@ -104,6 +124,11 @@ Ce mapping décrit les correspondances minimales à appliquer lors de l'impléme
 - `episode.number` → `episode`
 - `episode.name` → `episode_title`
 - `episode.airdate` → `release_year` (année extraite)
+- `show.language` → `extras.language`
+- `show.genres[]` → `extras.genres`
+- `show.summary` → `extras.synopsis`
+- `show.externals.*` → `extras.external_ids`
+- `score` → `source_score`, combiné avec `source_trust` pour `global_score`
 
 ## Flux utilisateur (prototype)
 
