@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use serde::Deserialize;
+
 use crate::metadata::error::MetadataError;
 use crate::metadata::models::{EpisodeMatch, MovieMatch, TitleMatch};
 use crate::metadata::provider::MetadataProvider;
@@ -10,7 +12,7 @@ pub struct AniDbClient {
     base_url: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 struct AniDbTitle {
     id: u32,
     title: String,
@@ -18,7 +20,7 @@ struct AniDbTitle {
     rating: f32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 struct AniDbEpisode {
     id: u32,
     number: u32,
@@ -138,5 +140,30 @@ impl MetadataProvider for AniDbClient {
         Err(MetadataError::NotFound(
             "AniDB is series-focused and does not provide movie details.".to_string(),
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_title_from_fixture() {
+        let payload = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/anidb_title.json"
+        ));
+        let title: AniDbTitle = serde_json::from_str(payload).expect("fixture should parse");
+        let client = AniDbClient::new("test-key");
+        let normalized = client.normalize_title(title);
+
+        assert_eq!(normalized.id, "42");
+        assert_eq!(normalized.name, "Example Anime");
+        assert_eq!(normalized.year, Some(2006));
+        assert_eq!(normalized.source, "AniDB");
+        assert_eq!(
+            normalized.extras.external_ids.anidb.as_deref(),
+            Some("42")
+        );
     }
 }

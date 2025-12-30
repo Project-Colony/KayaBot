@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use serde::Deserialize;
+
 use crate::metadata::error::MetadataError;
 use crate::metadata::models::{EpisodeMatch, MovieMatch, TitleMatch};
 use crate::metadata::provider::MetadataProvider;
@@ -10,7 +12,7 @@ pub struct TheTvDbClient {
     base_url: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 struct TheTvDbSeries {
     id: String,
     name: String,
@@ -18,7 +20,7 @@ struct TheTvDbSeries {
     score: f32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 struct TheTvDbEpisode {
     id: String,
     season: u32,
@@ -26,7 +28,7 @@ struct TheTvDbEpisode {
     name: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 struct TheTvDbMovieDetails {
     id: String,
     title: String,
@@ -184,5 +186,30 @@ impl MetadataProvider for TheTvDbClient {
         }
         let details = self.mock_movie_details(title_id);
         Ok(self.normalize_movie(details))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_title_from_fixture() {
+        let payload = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/thetvdb_series.json"
+        ));
+        let series: TheTvDbSeries = serde_json::from_str(payload).expect("fixture should parse");
+        let client = TheTvDbClient::new("test-key");
+        let normalized = client.normalize_title(series);
+
+        assert_eq!(normalized.id, "tvdb-99");
+        assert_eq!(normalized.name, "Example Series");
+        assert_eq!(normalized.year, Some(2010));
+        assert_eq!(normalized.source, "TheTVDB");
+        assert_eq!(
+            normalized.extras.external_ids.tvdb.as_deref(),
+            Some("tvdb-99")
+        );
     }
 }
