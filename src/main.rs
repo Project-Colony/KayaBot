@@ -79,7 +79,7 @@ struct RenameApp {
     detection_notice: Option<String>,
     force_metadata_source: bool,
     api_config: ApiConfig,
-    open_settings_section: Option<SettingsSection>,
+    active_settings_section: SettingsSection,
     user_preferences: UserPreferences,
     system_visuals: Option<egui::Visuals>,
 }
@@ -139,7 +139,7 @@ impl Default for RenameApp {
             detection_notice: None,
             force_metadata_source: false,
             api_config,
-            open_settings_section: Some(SettingsSection::Program),
+            active_settings_section: SettingsSection::Program,
             user_preferences: UserPreferences::load().unwrap_or_default(),
             system_visuals: None,
         }
@@ -435,167 +435,91 @@ impl RenameApp {
                 ui.label(title);
             },
         );
-        ui.add_space(2.0);
-        ui.label(
-            RichText::new("Personalize how KayaBot behaves and looks.")
-                .size(12.0)
-                .color(palette.subtext0),
-        );
-        ui.add_space(6.0);
+        ui.add_space(4.0);
         ui.separator();
-        ui.add_space(10.0);
+        ui.add_space(8.0);
 
-        ScrollArea::vertical()
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                ui.set_min_width(ui.available_width());
-                let mut changed = false;
-                changed |= self.settings_accordion_section(
-                    ui,
-                    SettingsSection::Program,
-                    "🧰",
-                    "Program",
-                    "Startup, safety, and API configuration.",
-                    Self::settings_program,
-                );
-                changed |= self.settings_accordion_section(
-                    ui,
-                    SettingsSection::Language,
-                    "🌍",
-                    "Language",
-                    "Region, date, and locale preferences.",
-                    Self::settings_language,
-                );
-                changed |= self.settings_accordion_section(
-                    ui,
-                    SettingsSection::Appearance,
-                    "🎨",
-                    "Appearance",
-                    "Theme, density, and visual polish.",
-                    Self::settings_appearance,
-                );
-                changed |= self.settings_accordion_section(
-                    ui,
-                    SettingsSection::Experience,
-                    "✨",
-                    "Experience",
-                    "Guidance, feedback, and highlights.",
-                    Self::settings_experience,
-                );
-                changed |= self.settings_accordion_section(
-                    ui,
-                    SettingsSection::Utilities,
-                    "🛠️",
-                    "Utilities",
-                    "Workflow helpers and reset options.",
-                    Self::settings_utilities,
-                );
-                if changed {
-                    self.user_preferences.save();
-                }
+        ui.vertical(|ui| {
+            let available_width = ui.available_width();
+            let menu_frame = Frame::none()
+                .fill(palette.mantle)
+                .stroke(Stroke::new(1.0, palette.overlay0))
+                .rounding(egui::Rounding::same(6.0))
+                .inner_margin(egui::Margin::symmetric(8.0, 8.0));
+
+            menu_frame.show(ui, |ui| {
+                ui.set_min_width(available_width);
+                ui.label(RichText::new("Menu").strong());
+                ui.add_space(6.0);
+                self.settings_section_button(ui, SettingsSection::Program, "🧰", "Program");
+                self.settings_section_button(ui, SettingsSection::Language, "🌍", "Language");
+                self.settings_section_button(ui, SettingsSection::Appearance, "🎨", "Appearance");
+                self.settings_section_button(ui, SettingsSection::Experience, "✨", "Experience");
+                self.settings_section_button(ui, SettingsSection::Utilities, "🛠️", "Utilities");
             });
+
+            ui.add_space(12.0);
+
+            Frame::none()
+                .fill(palette.base)
+                .stroke(Stroke::new(1.0, palette.overlay0))
+                .rounding(egui::Rounding::same(6.0))
+                .inner_margin(egui::Margin::symmetric(12.0, 12.0))
+                .show(ui, |ui| {
+                    ui.set_min_width(available_width);
+                    ScrollArea::vertical()
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            let settings_changed = match self.active_settings_section {
+                                SettingsSection::Program => self.settings_program(ui),
+                                SettingsSection::Language => self.settings_language(ui),
+                                SettingsSection::Appearance => self.settings_appearance(ui),
+                                SettingsSection::Experience => self.settings_experience(ui),
+                                SettingsSection::Utilities => self.settings_utilities(ui),
+                            };
+                            if settings_changed {
+                                self.user_preferences.save();
+                            }
+                        });
+                });
+        });
     }
 
-    fn settings_section_id(&self, section: SettingsSection) -> &'static str {
-        match section {
-            SettingsSection::Program => "settings_section_program",
-            SettingsSection::Language => "settings_section_language",
-            SettingsSection::Appearance => "settings_section_appearance",
-            SettingsSection::Experience => "settings_section_experience",
-            SettingsSection::Utilities => "settings_section_utilities",
-        }
-    }
-
-    fn settings_accordion_section(
+    fn settings_section_button(
         &mut self,
         ui: &mut egui::Ui,
         section: SettingsSection,
         icon: &str,
         label: &str,
-        description: &str,
-        content: fn(&mut RenameApp, &mut egui::Ui) -> bool,
-    ) -> bool {
+    ) {
         let palette = self.theme_palette();
-        let id = ui.make_persistent_id(self.settings_section_id(section));
-        let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(
-            ui.ctx(),
-            id,
-            self.open_settings_section == Some(section),
-        );
-        let is_open = self.open_settings_section == Some(section);
-        state.set_open(is_open);
-        let fill = if is_open {
+        let is_active = self.active_settings_section == section;
+        let fill = if is_active {
             palette.surface1
         } else {
             palette.surface0
         };
-        let stroke = if is_open {
+        let stroke = if is_active {
             Stroke::new(1.5, palette.accent_border)
         } else {
             Stroke::new(1.0, palette.overlay0)
         };
-        let response = Frame::none()
-            .fill(fill)
-            .stroke(stroke)
-            .rounding(egui::Rounding::same(10.0))
-            .inner_margin(egui::Margin::symmetric(14.0, 10.0))
-            .show(ui, |ui| {
-                ui.set_min_width(ui.available_width());
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new(icon).size(16.0));
-                    ui.add_space(8.0);
-                    ui.vertical(|ui| {
-                        ui.label(RichText::new(label).size(14.0).strong());
-                        ui.label(
-                            RichText::new(description)
-                                .size(11.0)
-                                .color(palette.subtext0),
-                        );
-                    });
-                    ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.set_min_width(ui.available_width());
-                        let chevron = if state.is_open() { "▾" } else { "▸" };
-                        ui.label(RichText::new(chevron).size(16.0).color(palette.subtext0));
-                    });
-                });
-            })
-            .response;
-
+        let response = ui.add_sized(
+            Vec2::new(ui.available_width(), 34.0),
+            Button::new(RichText::new(format!("{icon} {label}")).size(12.0))
+                .fill(fill)
+                .stroke(stroke),
+        );
         if response.clicked() {
-            if is_open {
-                self.open_settings_section = None;
-            } else {
-                self.open_settings_section = Some(section);
-            }
-            ui.ctx().request_repaint();
-            state.set_open(self.open_settings_section == Some(section));
+            self.active_settings_section = section;
         }
-
-        let mut changed = false;
-        state.show_body_unindented(ui, |ui| {
-            Frame::none()
-                .fill(palette.base)
-                .stroke(Stroke::new(1.0, palette.overlay0))
-                .rounding(egui::Rounding::same(10.0))
-                .inner_margin(egui::Margin::symmetric(12.0, 12.0))
-                .show(ui, |ui| {
-                    ui.set_min_width(ui.available_width());
-                    changed = content(self, ui);
-                });
-        });
-        ui.add_space(10.0);
-        changed
     }
 
     fn settings_program(&mut self, ui: &mut egui::Ui) -> bool {
         let palette = self.theme_palette();
         let mut changed = false;
-        ui.label(
-            RichText::new("Control startup behavior and connection safety checks.")
-                .size(11.0)
-                .color(palette.subtext0),
-        );
-        ui.add_space(8.0);
+        ui.label(RichText::new("Program").font(FontId::proportional(18.0)));
+        ui.add_space(6.0);
         changed |= ui
             .checkbox(
                 &mut self.user_preferences.open_last_session,
@@ -620,7 +544,7 @@ impl RenameApp {
                 "Ask for confirmation before renaming",
             )
             .changed();
-        ui.add_space(14.0);
+        ui.add_space(12.0);
         ui.label(RichText::new("API configuration").strong());
         ui.label(
             RichText::new("Keys are loaded from ~/.kayabot/config.toml or environment variables.")
@@ -644,14 +568,9 @@ impl RenameApp {
     }
 
     fn settings_language(&mut self, ui: &mut egui::Ui) -> bool {
-        let palette = self.theme_palette();
         let mut changed = false;
-        ui.label(
-            RichText::new("Pick the locale used for metadata and formatting.")
-                .size(11.0)
-                .color(palette.subtext0),
-        );
-        ui.add_space(8.0);
+        ui.label(RichText::new("Language").font(FontId::proportional(18.0)));
+        ui.add_space(6.0);
         let language_response = egui::ComboBox::from_id_source("settings_language")
             .selected_text(self.user_preferences.language.label())
             .show_ui(ui, |ui| {
@@ -688,14 +607,9 @@ impl RenameApp {
     }
 
     fn settings_appearance(&mut self, ui: &mut egui::Ui) -> bool {
-        let palette = self.theme_palette();
         let mut changed = false;
-        ui.label(
-            RichText::new("Adjust contrast, spacing, and motion.")
-                .size(11.0)
-                .color(palette.subtext0),
-        );
-        ui.add_space(8.0);
+        ui.label(RichText::new("Appearance").font(FontId::proportional(18.0)));
+        ui.add_space(6.0);
         let theme_response = egui::ComboBox::from_id_source("settings_theme")
             .selected_text(self.user_preferences.theme.label())
             .show_ui(ui, |ui| {
@@ -732,14 +646,9 @@ impl RenameApp {
     }
 
     fn settings_experience(&mut self, ui: &mut egui::Ui) -> bool {
-        let palette = self.theme_palette();
         let mut changed = false;
-        ui.label(
-            RichText::new("Fine-tune the guidance and feedback you receive.")
-                .size(11.0)
-                .color(palette.subtext0),
-        );
-        ui.add_space(8.0);
+        ui.label(RichText::new("Experience").font(FontId::proportional(18.0)));
+        ui.add_space(6.0);
         changed |= ui
             .checkbox(
                 &mut self.user_preferences.show_tips,
@@ -768,14 +677,9 @@ impl RenameApp {
     }
 
     fn settings_utilities(&mut self, ui: &mut egui::Ui) -> bool {
-        let palette = self.theme_palette();
         let mut changed = false;
-        ui.label(
-            RichText::new("Extra helpers to streamline the rename workflow.")
-                .size(11.0)
-                .color(palette.subtext0),
-        );
-        ui.add_space(8.0);
+        ui.label(RichText::new("Utilities").font(FontId::proportional(18.0)));
+        ui.add_space(6.0);
         changed |= ui
             .checkbox(
                 &mut self.user_preferences.enable_quick_actions,
