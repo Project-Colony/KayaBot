@@ -1510,21 +1510,31 @@ impl DateFormat {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ThemeChoice {
     System,
-    Light,
-    Dark,
+    Latte,
+    Frappe,
+    Macchiato,
+    Mocha,
 }
 
 impl ThemeChoice {
     fn label(self) -> &'static str {
         match self {
             ThemeChoice::System => "System",
-            ThemeChoice::Light => "Light",
-            ThemeChoice::Dark => "Dark",
+            ThemeChoice::Latte => "Latte",
+            ThemeChoice::Frappe => "Frappé",
+            ThemeChoice::Macchiato => "Macchiato",
+            ThemeChoice::Mocha => "Mocha",
         }
     }
 
-    fn all() -> [Self; 3] {
-        [ThemeChoice::System, ThemeChoice::Light, ThemeChoice::Dark]
+    fn all() -> [Self; 5] {
+        [
+            ThemeChoice::System,
+            ThemeChoice::Latte,
+            ThemeChoice::Frappe,
+            ThemeChoice::Macchiato,
+            ThemeChoice::Mocha,
+        ]
     }
 }
 
