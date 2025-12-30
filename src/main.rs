@@ -1,3 +1,5 @@
+mod metadata;
+
 use eframe::egui::{self, Button, Color32, FontId, Frame, Layout, RichText, ScrollArea, Stroke, Vec2};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
