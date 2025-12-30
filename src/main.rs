@@ -5,7 +5,10 @@ mod metadata;
 use eframe::egui::{
     self, Button, Color32, FontId, Frame, Layout, RichText, ScrollArea, Stroke, Vec2,
 };
-use formatting::{DEFAULT_SERIES_FORMAT, FormatOptions, MovieFormatInput, SeriesFormatInput};
+use formatting::{
+    DEFAULT_MOVIE_FORMAT, DEFAULT_SERIES_FORMAT, FormatOptions, MovieFormatInput,
+    SeriesFormatInput,
+};
 use metadata::filebot_like::FileBotLikeProvider;
 use metadata::models::{EpisodeMatch, TitleMatch};
 use metadata::provider::{MetadataProvider, MetadataSource};
@@ -412,7 +415,11 @@ impl RenameApp {
         );
         if response.clicked() {
             println!("Action clicked: {label}");
-            if label == "Rename" {
+            if label == "Match" {
+                self.match_results = matching::match_files(&self.original_files);
+                self.rename_feedback = None;
+                self.refresh_rename_ui_state();
+            } else if label == "Rename" {
                 let matched = self.episode_matches.len().min(self.original_files.len());
                 let unmatched = self.original_files.len().saturating_sub(matched);
                 self.rename_feedback = Some((matched, unmatched));
@@ -527,13 +534,25 @@ impl RenameApp {
                 );
                 ui.checkbox(&mut self.format_options.include_year, "Include year");
             });
+            let format_label = match self.content_type {
+                ContentType::Series => DEFAULT_SERIES_FORMAT,
+                ContentType::Movie => DEFAULT_MOVIE_FORMAT,
+            };
             ui.label(
-                RichText::new(DEFAULT_SERIES_FORMAT)
+                RichText::new(format_label)
                     .size(10.0)
                     .color(Color32::from_gray(120)),
             );
             ui.add_space(6.0);
             ui.label(RichText::new("Proposed Results").size(12.0));
+            ui.label(
+                RichText::new(format!(
+                    "Source: {}",
+                    self.metadata_provider.active_source().label()
+                ))
+                .size(10.0)
+                .color(Color32::from_gray(110)),
+            );
             if self.content_type == ContentType::Series {
                 if self.episode_matches.is_empty() {
                     ui.label(
@@ -543,8 +562,8 @@ impl RenameApp {
                     ScrollArea::vertical().max_height(120.0).show(ui, |ui| {
                         for episode in &self.episode_matches {
                             ui.label(format!(
-                                "S{:02}E{:02} - {}",
-                                episode.season, episode.episode, episode.title
+                                "S{:02}E{:02} - {} ({})",
+                                episode.season, episode.episode, episode.title, episode.id
                             ));
                         }
                     });
@@ -628,6 +647,9 @@ impl RenameApp {
                 .map(|result| NewNameRow {
                     name: self.format_preview(result),
                     status: Some(result.status),
+                    original: Some(result.original.clone()),
+                    confidence: Some(result.confidence),
+                    candidate_count: Some(result.candidates.len()),
                 })
                 .collect(),
         }
@@ -736,6 +758,9 @@ impl ListItem for String {
 struct NewNameRow {
     name: String,
     status: Option<matching::MatchStatus>,
+    original: Option<String>,
+    confidence: Option<f32>,
+    candidate_count: Option<usize>,
 }
 
 impl NewNameRow {
@@ -743,6 +768,9 @@ impl NewNameRow {
         Self {
             name: message.into(),
             status: None,
+            original: None,
+            confidence: None,
+            candidate_count: None,
         }
     }
 }
@@ -755,10 +783,24 @@ impl ListItem for NewNameRow {
                 matching::MatchStatus::Ambiguous => ("ambiguous", Color32::from_rgb(180, 130, 30)),
                 matching::MatchStatus::Error => ("error", Color32::from_rgb(180, 40, 40)),
             };
-            ui.horizontal(|ui| {
-                ui.label(&self.name);
-                ui.add_space(6.0);
-                ui.label(RichText::new(label).color(color));
+            ui.vertical(|ui| {
+                ui.horizontal(|ui| {
+                    ui.label(&self.name);
+                    ui.add_space(6.0);
+                    ui.label(RichText::new(label).color(color));
+                });
+                if let Some(original) = &self.original {
+                    let candidate_count = self.candidate_count.unwrap_or(1);
+                    let detail = if let Some(confidence) = self.confidence {
+                        format!(
+                            "from {original} • {:.0}% confidence • {candidate_count} candidate(s)",
+                            confidence * 100.0
+                        )
+                    } else {
+                        format!("from {original} • {candidate_count} candidate(s)")
+                    };
+                    ui.label(RichText::new(detail).color(Color32::from_gray(120)).size(10.0));
+                }
             });
         } else {
             ui.label(RichText::new(&self.name).color(Color32::from_gray(120)));
