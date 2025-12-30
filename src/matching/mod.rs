@@ -32,10 +32,7 @@ pub struct MatchResult {
 }
 
 pub fn match_files(files: &[String]) -> Vec<MatchResult> {
-    files
-        .iter()
-        .map(|file| match_single(file))
-        .collect()
+    files.iter().map(|file| match_single(file)).collect()
 }
 
 fn match_single(filename: &str) -> MatchResult {
