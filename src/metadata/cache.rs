@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -325,12 +325,10 @@ impl MetadataCache {
         if let Ok(path) = std::env::var(CACHE_ENV_PATH) {
             return PathBuf::from(path);
         }
-        let home = std::env::var("HOME")
-            .or_else(|_| std::env::var("USERPROFILE"))
-            .ok();
-        if let Some(home) = home {
-            return Path::new(&home)
-                .join(".kayabot")
+        if let Some(config_dir) = dirs::config_dir() {
+            return config_dir
+                .join("Colony")
+                .join("KayaBot")
                 .join("metadata_cache.json");
         }
         PathBuf::from("metadata_cache.json")
