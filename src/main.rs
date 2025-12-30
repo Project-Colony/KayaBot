@@ -207,10 +207,12 @@ impl RenameApp {
                 ui.horizontal(|ui| {
                     let left_width = (ui.available_width() - 120.0) * 0.5;
                     let right_width = left_width;
+                    let original_files = self.original_files.clone();
+                    let new_names = self.new_names.clone();
 
-                    self.list_panel(ui, "Original Files", left_width, &self.original_files, |ui| {
+                    Self::list_panel(self, ui, "Original Files", left_width, &original_files, |_, ui| {
                         ui.add_space(6.0);
-                    }, |ui| {
+                    }, |_, ui| {
                         ui.horizontal(|ui| {
                             ui.add_sized(Vec2::new(32.0, 26.0), Button::new("⬇"));
                             ui.add_sized(Vec2::new(32.0, 26.0), Button::new("⬆"));
@@ -224,30 +226,30 @@ impl RenameApp {
                     self.center_buttons(ui);
                     ui.add_space(10.0);
 
-                    self.list_panel(ui, "New Names", right_width, &self.new_names, |ui| {
+                    Self::list_panel(self, ui, "New Names", right_width, &new_names, |app, ui| {
                         ui.add_space(6.0);
-                        self.fetch_data_panel(ui);
-                    }, |ui| {
+                        app.fetch_data_panel(ui);
+                    }, |app, ui| {
                         ui.horizontal(|ui| {
                             ui.add_sized(Vec2::new(32.0, 26.0), Button::new("⬇"));
                             ui.add_sized(Vec2::new(32.0, 26.0), Button::new("⬆"));
                             ui.add_sized(Vec2::new(70.0, 26.0), Button::new("📂 Load"));
-                            let fetch_label = match self.fetch_status {
+                            let fetch_label = match app.fetch_status {
                                 FetchStatus::Loading => "Fetching...",
                                 _ => "Fetch Data",
                             };
                             let fetch_clicked = ui
                                 .add_enabled(
-                                    !matches!(self.fetch_status, FetchStatus::Loading),
+                                    !matches!(app.fetch_status, FetchStatus::Loading),
                                     Button::new(fetch_label),
                                 )
                                 .clicked();
                             if fetch_clicked {
-                                self.fetch_metadata();
+                                app.fetch_metadata();
                             }
                             let adjust_clicked = ui.add_sized(Vec2::new(32.0, 26.0), Button::new("🔧")).clicked();
                             if adjust_clicked {
-                                self.show_match_picker = true;
+                                app.show_match_picker = true;
                             }
                         });
                     });
@@ -261,7 +263,7 @@ impl RenameApp {
     }
 
     fn list_panel<C, F>(
-        &self,
+        app: &mut RenameApp,
         ui: &mut egui::Ui,
         title: &str,
         width: f32,
@@ -270,8 +272,8 @@ impl RenameApp {
         toolbar: F,
     )
     where
-        C: FnOnce(&mut egui::Ui),
-        F: FnOnce(&mut egui::Ui),
+        C: FnOnce(&mut RenameApp, &mut egui::Ui),
+        F: FnOnce(&mut RenameApp, &mut egui::Ui),
     {
         let panel_frame = Frame::none()
             .fill(Color32::from_gray(245))
@@ -307,11 +309,11 @@ impl RenameApp {
                                     });
                             });
 
-                        content(ui);
+                        content(app, ui);
                         ui.add_space(8.0);
                         ui.with_layout(Layout::left_to_right(egui::Align::Center), |ui| {
                             ui.set_min_height(toolbar_height);
-                            toolbar(ui);
+                            toolbar(app, ui);
                         });
                     });
                 });
@@ -495,6 +497,7 @@ impl RenameApp {
 
     fn match_picker_window(&mut self, ctx: &egui::Context) {
         let mut open = self.show_match_picker;
+        let mut close_window = false;
         egui::Window::new("Adjust Title Match")
             .open(&mut open)
             .show(ctx, |ui| {
@@ -503,6 +506,9 @@ impl RenameApp {
                     return;
                 }
 
+                let mut selected_id = None;
+                let mut should_fetch = false;
+                let mut should_close = false;
                 for title in &self.title_matches {
                     let label = format!(
                         "{}{} (score {:.2})",
@@ -512,14 +518,24 @@ impl RenameApp {
                     );
                     let selected = self.selected_title_id.as_deref() == Some(&title.id);
                     if ui.selectable_label(selected, label).clicked() {
-                        self.selected_title_id = Some(title.id.clone());
-                        if self.content_type == ContentType::Series {
-                            self.fetch_episodes();
-                        }
-                        self.show_match_picker = false;
+                        selected_id = Some(title.id.clone());
+                        should_fetch = self.content_type == ContentType::Series;
+                        should_close = true;
                     }
                 }
+                if let Some(selected_id) = selected_id {
+                    self.selected_title_id = Some(selected_id);
+                    if should_fetch {
+                        self.fetch_episodes();
+                    }
+                }
+                if should_close {
+                    close_window = true;
+                }
             });
+        if close_window {
+            open = false;
+        }
         self.show_match_picker = open;
     }
 }
