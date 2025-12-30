@@ -34,6 +34,14 @@ enum FetchStatus {
     Error(String),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RenameUiState {
+    Loading,
+    Success(usize),
+    Error(String),
+    Empty,
+}
+
 struct RenameApp {
     active_left_nav: LeftNav,
     original_files: Vec<String>,
@@ -48,6 +56,7 @@ struct RenameApp {
     rename_feedback: Option<(usize, usize)>,
     format_options: FormatOptions,
     metadata_provider: FileBotLikeProvider,
+    rename_ui_state: RenameUiState,
 }
 
 impl Default for RenameApp {
@@ -75,6 +84,11 @@ impl Default for RenameApp {
         .collect::<Vec<String>>();
 
         let match_results = matching::match_files(&original_files);
+        let rename_ui_state = if match_results.is_empty() {
+            RenameUiState::Empty
+        } else {
+            RenameUiState::Success(match_results.len())
+        };
 
         Self {
             active_left_nav: LeftNav::Rename,
@@ -90,6 +104,7 @@ impl Default for RenameApp {
             rename_feedback: None,
             format_options: FormatOptions::default(),
             metadata_provider: FileBotLikeProvider::new(),
+            rename_ui_state,
         }
     }
 }
@@ -172,6 +187,7 @@ impl RenameApp {
     }
 
     fn main_content(&mut self, ctx: &egui::Context, ui: &mut egui::Ui) {
+        self.refresh_rename_ui_state();
         let available_width = ui.available_width();
         ui.allocate_ui_with_layout(
             Vec2::new(available_width, ui.available_height()),
@@ -195,7 +211,7 @@ impl RenameApp {
                     let left_width = (ui.available_width() - 120.0) * 0.5;
                     let right_width = left_width;
                     let original_files = self.original_files.clone();
-                    let match_rows = self.preview_rows();
+                    let match_rows = self.new_names_rows();
 
                     Self::list_panel(
                         self,
@@ -259,6 +275,11 @@ impl RenameApp {
                         },
                     );
                 });
+
+                ui.add_space(8.0);
+                ui.separator();
+                ui.add_space(4.0);
+                self.rename_status_message(ui);
 
                 if self.show_match_picker {
                     self.match_picker_window(ctx);
@@ -374,6 +395,7 @@ impl RenameApp {
     fn fetch_metadata(&mut self) {
         self.fetch_status = FetchStatus::Loading;
         self.rename_feedback = None;
+        self.refresh_rename_ui_state();
 
         if self.detected_series_name.trim().is_empty() {
             if let Some(detected) = self.detect_series_name() {
@@ -406,6 +428,7 @@ impl RenameApp {
                 self.fetch_status = FetchStatus::Error(err.to_string());
             }
         }
+        self.refresh_rename_ui_state();
     }
 
     fn fetch_episodes(&mut self) {
@@ -422,6 +445,7 @@ impl RenameApp {
                 self.fetch_status = FetchStatus::Error(err.to_string());
             }
         }
+        self.refresh_rename_ui_state();
     }
 
     fn detect_series_name(&self) -> Option<String> {
@@ -563,14 +587,61 @@ impl RenameApp {
         self.show_match_picker = open;
     }
 
-    fn preview_rows(&self) -> Vec<(String, matching::MatchResult)> {
-        self.match_results
-            .iter()
-            .map(|result| {
-                let preview = self.format_preview(result);
-                (preview, result.clone())
-            })
-            .collect()
+    fn new_names_rows(&self) -> Vec<NewNameRow> {
+        match &self.rename_ui_state {
+            RenameUiState::Loading => vec![NewNameRow::status("Chargement des résultats…")],
+            RenameUiState::Error(message) => {
+                vec![NewNameRow::status(format!("Erreur: {message}"))]
+            }
+            RenameUiState::Empty => vec![NewNameRow::status("Aucun résultat disponible.")],
+            RenameUiState::Success(_) => self
+                .match_results
+                .iter()
+                .map(|result| NewNameRow {
+                    name: self.format_preview(result),
+                    status: Some(result.status),
+                })
+                .collect(),
+        }
+    }
+
+    fn rename_status_message(&self, ui: &mut egui::Ui) {
+        let (message, color) = match &self.rename_ui_state {
+            RenameUiState::Loading => (
+                "Statut: chargement…".to_string(),
+                Color32::from_rgb(80, 80, 160),
+            ),
+            RenameUiState::Success(count) => (
+                format!("Statut: succès — {count} résultat(s) prêts."),
+                Color32::from_rgb(60, 130, 90),
+            ),
+            RenameUiState::Error(message) => (
+                format!("Statut: erreur — {message}"),
+                Color32::from_rgb(180, 40, 40),
+            ),
+            RenameUiState::Empty => (
+                "Statut: aucun résultat pour le moment.".to_string(),
+                Color32::from_gray(110),
+            ),
+        };
+        ui.label(RichText::new(message).color(color));
+    }
+
+    fn refresh_rename_ui_state(&mut self) {
+        let next_state = match &self.fetch_status {
+            FetchStatus::Loading => RenameUiState::Loading,
+            FetchStatus::Error(message) => RenameUiState::Error(message.clone()),
+            FetchStatus::Idle | FetchStatus::Ready => {
+                if self.match_results.is_empty() {
+                    RenameUiState::Empty
+                } else {
+                    RenameUiState::Success(self.match_results.len())
+                }
+            }
+        };
+        if self.rename_ui_state != next_state {
+            self.rename_ui_state = next_state;
+        }
     }
 
     fn format_preview(&self, result: &matching::MatchResult) -> String {
@@ -634,19 +705,36 @@ impl ListItem for String {
     }
 }
 
-impl ListItem for (String, matching::MatchResult) {
+struct NewNameRow {
+    name: String,
+    status: Option<matching::MatchStatus>,
+}
+
+impl NewNameRow {
+    fn status(message: impl Into<String>) -> Self {
+        Self {
+            name: message.into(),
+            status: None,
+        }
+    }
+}
+
+impl ListItem for NewNameRow {
     fn render(&self, ui: &mut egui::Ui) {
-        let (name, result) = self;
-        let (label, color) = match result.status {
-            matching::MatchStatus::Ok => ("ok", Color32::from_rgb(40, 140, 80)),
-            matching::MatchStatus::Ambiguous => ("ambiguous", Color32::from_rgb(180, 130, 30)),
-            matching::MatchStatus::Error => ("error", Color32::from_rgb(180, 40, 40)),
-        };
-        ui.horizontal(|ui| {
-            ui.label(name);
-            ui.add_space(6.0);
-            ui.label(RichText::new(label).color(color));
-        });
+        if let Some(status) = self.status {
+            let (label, color) = match status {
+                matching::MatchStatus::Ok => ("ok", Color32::from_rgb(40, 140, 80)),
+                matching::MatchStatus::Ambiguous => ("ambiguous", Color32::from_rgb(180, 130, 30)),
+                matching::MatchStatus::Error => ("error", Color32::from_rgb(180, 40, 40)),
+            };
+            ui.horizontal(|ui| {
+                ui.label(&self.name);
+                ui.add_space(6.0);
+                ui.label(RichText::new(label).color(color));
+            });
+        } else {
+            ui.label(RichText::new(&self.name).color(Color32::from_gray(120)));
+        }
     }
 }
 
