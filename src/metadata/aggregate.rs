@@ -77,17 +77,13 @@ impl MetadataPipeline {
         self.active_source
     }
 
-    fn provider_mut(
-        &mut self,
-        source: MetadataSource,
-    ) -> Option<&mut (dyn MetadataProvider + '_)> {
+    fn provider_mut(&mut self, source: MetadataSource) -> Option<&mut (dyn MetadataProvider + '_)> {
         let entry = self
             .providers
             .iter_mut()
             .find(|entry| entry.source == source)?;
         Some(entry.provider.as_mut())
     }
-
 }
 
 impl MetadataProvider for MetadataPipeline {
