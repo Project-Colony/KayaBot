@@ -22,14 +22,38 @@ Ce dossier rassemble la documentation fonctionnelle et technique de KayaBot.
 
 ### Formatting
 
-- `src/formatting/mod.rs` génère les chemins par défaut pour séries et films et sanitise les composants.
+- `src/formatting/mod.rs` génère les formats finaux pour séries et films, applique les fallbacks et normalise les titres.
 - Les formats par défaut sont disponibles via `DEFAULT_SERIES_FORMAT` et `DEFAULT_MOVIE_FORMAT`.
+- Normalisation des titres :
+  - suppression des tags techniques (VF, 1080p, BluRay, etc.),
+  - remplacement de la ponctuation par des espaces,
+  - réduction des espaces multiples.
+
+Formats finaux (et fallbacks) :
+
+- Films : `{Title} ({Year})` (si `Year` est absent, on affiche uniquement `{Title}`).
+- Séries : `{Series Title} {Season}x{Episode} - {Episode Title}` (si `Episode Title` est absent, le suffixe ` - {Episode Title}` est omis).
 
 ### Métadonnées
 
 - `src/metadata/provider.rs` définit l'interface `MetadataProvider` et l'énumération `MetadataSource`.
 - `src/metadata/filebot_like.rs` fournit un provider en mémoire (dataset vide par défaut) et un cache local (`MetadataCache`).
 - `src/metadata/models.rs` définit les types `TitleMatch` et `EpisodeMatch`.
+
+#### Attributs attendus par source (films / séries)
+
+Les attributs ci-dessous correspondent aux champs utilisés par KayaBot (modèles `TitleMatch` et `EpisodeMatch`).
+
+| Source | Films (Title, Year) | Séries (Series Title, Season, Episode, Episode Title) |
+| --- | --- | --- |
+| TheMovieDB | Title, Year | Series Title, Season, Episode, Episode Title |
+| AniDB | Title | Series Title, Season, Episode, Episode Title |
+| TheTVDB | — | Series Title, Season, Episode, Episode Title |
+| TVmaze | — | Series Title, Season, Episode, Episode Title |
+
+Remarques :
+- Les films n'utilisent pas AniDB/TheTVDB/TVmaze dans l'UI actuelle, mais la liste ci-dessus fixe les champs attendus si l'intégration est ajoutée.
+- Tous les champs sont optionnels côté UI : un `Year` ou un `Episode Title` manquant déclenche un fallback de formatage.
 
 ## Flux utilisateur (prototype)
 
