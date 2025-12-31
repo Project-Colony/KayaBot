@@ -4,6 +4,7 @@ use std::time::Duration;
 use serde::Deserialize;
 
 use crate::metadata::error::MetadataError;
+use crate::metadata::locale::MetadataLocale;
 use crate::metadata::models::{EpisodeMatch, MovieMatch, TitleMatch};
 use crate::metadata::provider::MetadataProvider;
 
@@ -11,6 +12,7 @@ use crate::metadata::provider::MetadataProvider;
 pub struct TmdbClient {
     api_key: String,
     base_url: String,
+    locale: Option<MetadataLocale>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -44,10 +46,11 @@ struct TmdbMovieDetails {
 }
 
 impl TmdbClient {
-    pub fn new(api_key: impl Into<String>) -> Self {
+    pub fn new(api_key: impl Into<String>, locale: Option<MetadataLocale>) -> Self {
         Self {
             api_key: api_key.into(),
             base_url: "https://api.themoviedb.org/3".to_string(),
+            locale,
         }
     }
 
@@ -83,17 +86,31 @@ impl TmdbClient {
             reqwest::header::AUTHORIZATION,
             format!("Bearer {}", self.api_key)
                 .parse()
-                .map_err(|err| {
-                    MetadataError::Other(format!("Invalid TMDB auth header: {err}"))
-                })?,
+                .map_err(|err| MetadataError::Other(format!("Invalid TMDB auth header: {err}")))?,
         );
         headers.insert(
             reqwest::header::ACCEPT,
-            "application/json"
-                .parse()
-                .map_err(|err| MetadataError::Other(format!("Invalid TMDB accept header: {err}")))?,
+            "application/json".parse().map_err(|err| {
+                MetadataError::Other(format!("Invalid TMDB accept header: {err}"))
+            })?,
         );
         Ok(headers)
+    }
+
+    fn build_query(&self, query: &[(&str, &str)]) -> Vec<(String, String)> {
+        let mut merged: Vec<(String, String)> = query
+            .iter()
+            .map(|(key, value)| (key.to_string(), value.to_string()))
+            .collect();
+        if let Some(locale) = &self.locale {
+            if let Some(language) = locale.language.as_deref() {
+                merged.push(("language".to_string(), language.to_string()));
+            }
+            if let Some(region) = locale.region.as_deref() {
+                merged.push(("region".to_string(), region.to_string()));
+            }
+        }
+        merged
     }
 
     fn get_json<T: for<'de> Deserialize<'de>>(
@@ -106,7 +123,7 @@ impl TmdbClient {
         let response = client
             .get(url)
             .headers(self.headers()?)
-            .query(query)
+            .query(&self.build_query(query))
             .send()
             .map_err(|err| {
                 if err.is_timeout() {
@@ -162,7 +179,11 @@ impl TmdbClient {
         self.get_json(&format!("/tv/{title_id}"), &[])
     }
 
-    fn fetch_season(&self, title_id: &str, season_number: u32) -> Result<TmdbSeasonDetails, MetadataError> {
+    fn fetch_season(
+        &self,
+        title_id: &str,
+        season_number: u32,
+    ) -> Result<TmdbSeasonDetails, MetadataError> {
         self.get_json(&format!("/tv/{title_id}/season/{season_number}"), &[])
     }
 
@@ -248,7 +269,6 @@ impl TmdbClient {
             },
         }
     }
-
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -332,7 +352,7 @@ mod tests {
             "/tests/fixtures/tmdb_search.json"
         ));
         let title: TmdbTitle = serde_json::from_str(payload).expect("fixture should parse");
-        let client = TmdbClient::new("test-key");
+        let client = TmdbClient::new("test-key", None);
         let normalized = client.normalize_title(title);
 
         assert_eq!(normalized.id, "550");
