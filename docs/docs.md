@@ -156,7 +156,7 @@ Ce mapping décrit les correspondances minimales à appliquer lors de l'impléme
 ## Configuration
 
 Les clés API peuvent être définies dans le fichier
-`~/.config/Colony/KayaBot/api_keys.toml` ou via des variables d’environnement
+`~/.config/Colony/KayaBot/api_keys.toml` (ou `AppData/Local/Colony/KayaBot/api_keys.toml` sur Windows) ou via des variables d’environnement
 (les variables d’environnement ont priorité sur les fichiers).
 
 Le fichier `config.toml` est utilisé par l'application pour persister la file

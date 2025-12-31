@@ -1,6 +1,7 @@
 mod formatting;
 mod matching;
 mod metadata;
+mod paths;
 
 use eframe::egui::{
     self, Button, Color32, FontId, Frame, Layout, RichText, ScrollArea, Stroke, TextEdit, Vec2,
@@ -138,7 +139,7 @@ impl AppConfig {
     }
 
     fn config_path() -> Option<PathBuf> {
-        dirs::config_dir().map(|base| base.join("Colony").join("KayaBot").join("config.toml"))
+        paths::app_config_dir().map(|base| base.join("config.toml"))
     }
 }
 
@@ -3903,7 +3904,7 @@ impl UserPreferences {
 }
 
 fn config_root() -> Option<PathBuf> {
-    dirs::config_dir().map(|base| base.join("Colony").join("KayaBot"))
+    paths::app_config_dir()
 }
 
 trait ListItem {

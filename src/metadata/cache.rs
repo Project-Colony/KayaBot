@@ -7,6 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
+use crate::paths;
 use crate::metadata::models::{EpisodeMatch, TitleMatch};
 use crate::metadata::provider::MetadataSource;
 
@@ -327,11 +328,8 @@ impl MetadataCache {
         if let Ok(path) = std::env::var(CACHE_ENV_PATH) {
             return PathBuf::from(path);
         }
-        if let Some(config_dir) = dirs::config_dir() {
-            return config_dir
-                .join("Colony")
-                .join("KayaBot")
-                .join("metadata_cache.json");
+        if let Some(config_dir) = paths::app_config_dir() {
+            return config_dir.join("metadata_cache.json");
         }
         PathBuf::from("metadata_cache.json")
     }
