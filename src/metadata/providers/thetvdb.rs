@@ -542,4 +542,19 @@ mod tests {
             Some("tvdb-99")
         );
     }
+
+    #[test]
+    fn normalize_title_falls_back_when_translation_missing() {
+        let payload = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/thetvdb_series_missing_translation.json"
+        ));
+        let series: TheTvDbSeries = serde_json::from_str(payload).expect("fixture should parse");
+        let client = TheTvDbClient::new("test-key", None);
+        let normalized = client.normalize_title(series);
+
+        assert_eq!(normalized.id, "tvdb-100");
+        assert_eq!(normalized.name, "Original Series");
+        assert_eq!(normalized.year, Some(2015));
+    }
 }
