@@ -16,6 +16,7 @@ use metadata::providers::{
     anidb::AniDbClient, omdb::OmdbClient, thetvdb::TheTvDbClient, tmdb::TmdbClient,
     tvmaze::TvMazeClient,
 };
+use serde::Serialize;
 use std::{
     collections::{HashMap, HashSet},
     env, fs,
@@ -66,6 +67,12 @@ enum RenameOutcome {
     Failed(String),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RenameResultStatus {
+    Ok,
+    Error,
+}
+
 #[derive(Debug, Clone)]
 struct RenameSummary {
     original: String,
@@ -73,6 +80,15 @@ struct RenameSummary {
     resolved: String,
     collision_adjusted: bool,
     outcome: RenameOutcome,
+    result_status: RenameResultStatus,
+    message: String,
+}
+
+#[derive(Debug, Serialize)]
+struct RenameExportRow {
+    status: String,
+    message: String,
+    final_path: String,
 }
 
 struct RenameApp {
@@ -613,6 +629,54 @@ impl RenameApp {
         ui.separator();
         ui.add_space(4.0);
         self.rename_status_message(ui);
+
+        if !self.rename_summaries.is_empty() {
+            let palette = self.theme_palette();
+            ui.add_space(10.0);
+            Frame::none()
+                .fill(palette.mantle)
+                .stroke(Stroke::new(1.0, palette.overlay0))
+                .rounding(egui::Rounding::same(6.0))
+                .inner_margin(egui::Margin::symmetric(10.0, 10.0))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Résumé de renommage").strong());
+                        ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui.button("Exporter JSON").clicked() {
+                                self.export_rename_summary_json();
+                            }
+                            if ui.button("Exporter CSV").clicked() {
+                                self.export_rename_summary_csv();
+                            }
+                        });
+                    });
+                    ui.add_space(6.0);
+                    ScrollArea::vertical().max_height(180.0).show(ui, |ui| {
+                        ui.columns(3, |columns| {
+                            columns[0].label(RichText::new("Statut").strong());
+                            columns[1].label(RichText::new("Message").strong());
+                            columns[2].label(RichText::new("Chemin final").strong());
+                        });
+                        ui.separator();
+                        for summary in &self.rename_summaries {
+                            ui.columns(3, |columns| {
+                                let status_color = match summary.result_status {
+                                    RenameResultStatus::Ok => palette.success,
+                                    RenameResultStatus::Error => palette.danger,
+                                };
+                                columns[0].label(
+                                    RichText::new(Self::rename_status_label(
+                                        summary.result_status,
+                                    ))
+                                    .color(status_color),
+                                );
+                                columns[1].label(&summary.message);
+                                columns[2].label(&summary.resolved);
+                            });
+                        }
+                    });
+                });
+        }
 
         if self.show_match_picker {
             self.match_picker_window(ctx);
@@ -1195,26 +1259,26 @@ environment variables.",
         let original_path = PathBuf::from(original);
 
         if !original_path.exists() {
-            return RenameSummary {
-                original: original.to_string(),
-                proposed: preview,
-                resolved: original.to_string(),
-                collision_adjusted: false,
-                outcome: RenameOutcome::Failed("Fichier introuvable.".to_string()),
-            };
+            return self.build_rename_summary(
+                original,
+                preview,
+                original.to_string(),
+                false,
+                RenameOutcome::Failed("Fichier introuvable.".to_string()),
+            );
         }
 
         if matches!(result.status, matching::MatchStatus::Error)
             || preview.trim().is_empty()
             || preview == "—"
         {
-            return RenameSummary {
-                original: original.to_string(),
-                proposed: preview,
-                resolved: original.to_string(),
-                collision_adjusted: false,
-                outcome: RenameOutcome::Skipped("Aucun nom proposé.".to_string()),
-            };
+            return self.build_rename_summary(
+                original,
+                preview,
+                original.to_string(),
+                false,
+                RenameOutcome::Skipped("Aucun nom proposé.".to_string()),
+            );
         }
 
         let target_path = self.build_target_path(&original_path, &preview);
@@ -1224,23 +1288,23 @@ environment variables.",
         used_targets.insert(resolved_path.clone());
 
         if resolved_path == original_path {
-            return RenameSummary {
-                original: original.to_string(),
-                proposed: preview,
-                resolved: resolved_string,
+            return self.build_rename_summary(
+                original,
+                preview,
+                resolved_string,
                 collision_adjusted,
-                outcome: RenameOutcome::Unchanged,
-            };
+                RenameOutcome::Unchanged,
+            );
         }
 
         if self.rename_dry_run {
-            return RenameSummary {
-                original: original.to_string(),
-                proposed: preview,
-                resolved: resolved_string,
+            return self.build_rename_summary(
+                original,
+                preview,
+                resolved_string,
                 collision_adjusted,
-                outcome: RenameOutcome::DryRun,
-            };
+                RenameOutcome::DryRun,
+            );
         }
 
         match self.rename_file(&original_path, &resolved_path) {
@@ -1248,21 +1312,21 @@ environment variables.",
                 if let Some(slot) = updated_files.get_mut(index) {
                     *slot = resolved_string.clone();
                 }
-                RenameSummary {
-                    original: original.to_string(),
-                    proposed: preview,
-                    resolved: resolved_string,
+                self.build_rename_summary(
+                    original,
+                    preview,
+                    resolved_string,
                     collision_adjusted,
-                    outcome: RenameOutcome::Renamed,
-                }
+                    RenameOutcome::Renamed,
+                )
             }
-            Err(err) => RenameSummary {
-                original: original.to_string(),
-                proposed: preview,
-                resolved: resolved_string,
+            Err(err) => self.build_rename_summary(
+                original,
+                preview,
+                resolved_string,
                 collision_adjusted,
-                outcome: RenameOutcome::Failed(err),
-            },
+                RenameOutcome::Failed(err),
+            ),
         }
     }
 
@@ -1370,31 +1434,158 @@ environment variables.",
         }
     }
 
+    fn rename_result_status(outcome: &RenameOutcome) -> RenameResultStatus {
+        match outcome {
+            RenameOutcome::Failed(_) => RenameResultStatus::Error,
+            _ => RenameResultStatus::Ok,
+        }
+    }
+
+    fn rename_summary_message(
+        &self,
+        outcome: &RenameOutcome,
+        collision_adjusted: bool,
+        resolved: &str,
+    ) -> String {
+        let collision_note = if collision_adjusted {
+            " (collision résolue)"
+        } else {
+            ""
+        };
+        match outcome {
+            RenameOutcome::Renamed => format!("Renommé → {resolved}{collision_note}"),
+            RenameOutcome::DryRun => format!("Dry-run → {resolved}{collision_note}"),
+            RenameOutcome::Unchanged => format!("Déjà nommé → {resolved}{collision_note}"),
+            RenameOutcome::Skipped(message) => format!("Ignoré: {message}"),
+            RenameOutcome::Failed(message) => format!("Échec: {message}"),
+        }
+    }
+
+    fn build_rename_summary(
+        &self,
+        original: &str,
+        proposed: String,
+        resolved: String,
+        collision_adjusted: bool,
+        outcome: RenameOutcome,
+    ) -> RenameSummary {
+        let message = self.rename_summary_message(&outcome, collision_adjusted, &resolved);
+        let result_status = Self::rename_result_status(&outcome);
+        RenameSummary {
+            original: original.to_string(),
+            proposed,
+            resolved,
+            collision_adjusted,
+            outcome,
+            result_status,
+            message,
+        }
+    }
+
     fn rename_note_for_summary(
         &self,
         summary: &RenameSummary,
         palette: &ThemePalette,
     ) -> (String, Color32) {
-        let collision_note = if summary.collision_adjusted {
-            " (collision résolue)"
-        } else {
-            ""
-        };
         match &summary.outcome {
-            RenameOutcome::Renamed => (
-                format!("Renommé → {}{collision_note}", summary.resolved),
-                palette.success,
-            ),
-            RenameOutcome::DryRun => (
-                format!("Dry-run → {}{collision_note}", summary.resolved),
-                palette.warning,
-            ),
-            RenameOutcome::Unchanged => (
-                format!("Déjà nommé → {}{collision_note}", summary.resolved),
-                palette.subtext0,
-            ),
-            RenameOutcome::Skipped(message) => (format!("Ignoré: {message}"), palette.subtext0),
-            RenameOutcome::Failed(message) => (format!("Échec: {message}"), palette.danger),
+            RenameOutcome::Renamed => (summary.message.clone(), palette.success),
+            RenameOutcome::DryRun => (summary.message.clone(), palette.warning),
+            RenameOutcome::Unchanged => (summary.message.clone(), palette.subtext0),
+            RenameOutcome::Skipped(_) => (summary.message.clone(), palette.subtext0),
+            RenameOutcome::Failed(_) => (summary.message.clone(), palette.danger),
+        }
+    }
+
+    fn rename_status_label(status: RenameResultStatus) -> &'static str {
+        match status {
+            RenameResultStatus::Ok => "ok",
+            RenameResultStatus::Error => "erreur",
+        }
+    }
+
+    fn rename_export_rows(&self) -> Vec<RenameExportRow> {
+        self.rename_summaries
+            .iter()
+            .map(|summary| RenameExportRow {
+                status: Self::rename_status_label(summary.result_status).to_string(),
+                message: summary.message.clone(),
+                final_path: summary.resolved.clone(),
+            })
+            .collect()
+    }
+
+    fn export_rename_summary_csv(&mut self) {
+        if self.rename_summaries.is_empty() {
+            self.rename_feedback_message = Some("Aucun résumé à exporter.".to_string());
+            return;
+        }
+        let Some(path) = rfd::FileDialog::new()
+            .set_file_name("rename-summary.csv")
+            .save_file()
+        else {
+            return;
+        };
+        match self.write_rename_summary_csv(&path) {
+            Ok(()) => {
+                self.rename_feedback_message =
+                    Some(format!("Résumé CSV exporté vers {}.", path.display()));
+            }
+            Err(err) => {
+                self.rename_feedback_message =
+                    Some(format!("Erreur export CSV: {err}"));
+            }
+        }
+    }
+
+    fn export_rename_summary_json(&mut self) {
+        if self.rename_summaries.is_empty() {
+            self.rename_feedback_message = Some("Aucun résumé à exporter.".to_string());
+            return;
+        }
+        let Some(path) = rfd::FileDialog::new()
+            .set_file_name("rename-summary.json")
+            .save_file()
+        else {
+            return;
+        };
+        match self.write_rename_summary_json(&path) {
+            Ok(()) => {
+                self.rename_feedback_message =
+                    Some(format!("Résumé JSON exporté vers {}.", path.display()));
+            }
+            Err(err) => {
+                self.rename_feedback_message =
+                    Some(format!("Erreur export JSON: {err}"));
+            }
+        }
+    }
+
+    fn write_rename_summary_csv(&self, path: &Path) -> Result<(), String> {
+        let mut output = String::from("status,message,final_path\n");
+        for row in self.rename_export_rows() {
+            output.push_str(&format!(
+                "{},{},{}\n",
+                Self::csv_escape(&row.status),
+                Self::csv_escape(&row.message),
+                Self::csv_escape(&row.final_path)
+            ));
+        }
+        fs::write(path, output).map_err(|err| err.to_string())
+    }
+
+    fn write_rename_summary_json(&self, path: &Path) -> Result<(), String> {
+        let output = serde_json::to_string_pretty(&self.rename_export_rows())
+            .map_err(|err| err.to_string())?;
+        fs::write(path, output).map_err(|err| err.to_string())
+    }
+
+    fn csv_escape(value: &str) -> String {
+        let needs_quotes = value.contains(['"', ',', '\n', '\r']);
+        if needs_quotes {
+            let escaped = value.replace('"', "\"\"");
+            format!("\"{escaped}\"")
+        } else {
+            value.to_string()
         }
     }
 
