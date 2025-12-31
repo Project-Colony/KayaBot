@@ -1,7 +1,8 @@
 use std::collections::HashMap;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::Deserialize;
+use serde::de::{self, Deserializer};
 
 use crate::metadata::error::MetadataError;
 use crate::metadata::models::{EpisodeMatch, MovieMatch, TitleMatch};
@@ -11,11 +12,18 @@ use crate::metadata::provider::MetadataProvider;
 pub struct TheTvDbClient {
     api_key: String,
     base_url: String,
+    token: Option<TheTvDbToken>,
+}
+
+#[derive(Debug, Clone)]
+struct TheTvDbToken {
+    value: String,
+    expires_at: Option<Instant>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 struct TheTvDbSeries {
-    #[serde(alias = "tvdb_id")]
+    #[serde(alias = "tvdb_id", alias = "id", deserialize_with = "deserialize_string")]
     id: String,
     name: String,
     #[serde(default)]
@@ -26,17 +34,19 @@ struct TheTvDbSeries {
 
 #[derive(Debug, Clone, Deserialize)]
 struct TheTvDbEpisode {
+    #[serde(deserialize_with = "deserialize_string")]
     id: String,
     #[serde(rename = "season", alias = "seasonNumber", alias = "season_number")]
     season: u32,
     #[serde(rename = "episode", alias = "number", alias = "episodeNumber")]
     episode: u32,
+    #[serde(default)]
     name: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 struct TheTvDbMovieDetails {
-    #[serde(alias = "movie_id")]
+    #[serde(alias = "movie_id", alias = "id", deserialize_with = "deserialize_string")]
     id: String,
     #[serde(alias = "name")]
     title: String,
@@ -44,11 +54,22 @@ struct TheTvDbMovieDetails {
     year: Option<u16>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+struct TheTvDbTokenResponse {
+    data: TheTvDbTokenData,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct TheTvDbTokenData {
+    token: String,
+}
+
 impl TheTvDbClient {
     pub fn new(api_key: impl Into<String>) -> Self {
         Self {
             api_key: api_key.into(),
-            base_url: "https://api.thetvdb.com".to_string(),
+            base_url: "https://api4.thetvdb.com/v4".to_string(),
+            token: None,
         }
     }
 
@@ -58,10 +79,12 @@ impl TheTvDbClient {
 
     pub fn auth_headers(&self) -> HashMap<String, String> {
         let mut headers = HashMap::new();
-        headers.insert(
-            "Authorization".to_string(),
-            format!("Bearer {}", self.api_key),
-        );
+        if let Some(token) = &self.token {
+            headers.insert(
+                "Authorization".to_string(),
+                format!("Bearer {}", token.value),
+            );
+        }
         headers.insert("Accept".to_string(), "application/json".to_string());
         headers
     }
@@ -73,16 +96,14 @@ impl TheTvDbClient {
             .map_err(|err| MetadataError::Network(format!("Failed to build HTTP client: {err}")))
     }
 
-    fn headers(&self) -> Result<reqwest::header::HeaderMap, MetadataError> {
-        if self.api_key.trim().is_empty() {
-            return Err(MetadataError::Other(
-                "TheTVDB API key is not configured.".to_string(),
-            ));
-        }
+    fn headers_for_token(
+        &self,
+        token: &str,
+    ) -> Result<reqwest::header::HeaderMap, MetadataError> {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
             reqwest::header::AUTHORIZATION,
-            format!("Bearer {}", self.api_key)
+            format!("Bearer {}", token)
                 .parse()
                 .map_err(|err| {
                     MetadataError::Other(format!("Invalid TheTVDB auth header: {err}"))
@@ -97,16 +118,133 @@ impl TheTvDbClient {
         Ok(headers)
     }
 
+    fn authenticate(&self) -> Result<TheTvDbToken, MetadataError> {
+        if self.api_key.trim().is_empty() {
+            return Err(MetadataError::Other(
+                "TheTVDB API key is not configured.".to_string(),
+            ));
+        }
+        #[derive(serde::Serialize)]
+        struct LoginRequest<'a> {
+            apikey: &'a str,
+        }
+        let client = self.http_client()?;
+        let url = format!("{}/login", self.base_url);
+        let response = client
+            .post(url)
+            .json(&LoginRequest {
+                apikey: self.api_key.as_str(),
+            })
+            .send()
+            .map_err(|err| {
+                if err.is_timeout() {
+                    MetadataError::Network("TheTVDB auth request timed out.".to_string())
+                } else {
+                    MetadataError::Network(format!("TheTVDB auth request failed: {err}"))
+                }
+            })?;
+        let status = response.status();
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(MetadataError::Other(
+                "TheTVDB authorization failed. Check the configured API key.".to_string(),
+            ));
+        }
+        if !status.is_success() {
+            return Err(MetadataError::InvalidResponse(format!(
+                "TheTVDB auth returned status {status}."
+            )));
+        }
+        let payload = response.json::<TheTvDbTokenResponse>().map_err(|err| {
+            MetadataError::InvalidResponse(format!("Failed to parse TheTVDB auth response: {err}"))
+        })?;
+        Ok(TheTvDbToken {
+            value: payload.data.token,
+            expires_at: Some(Instant::now() + Duration::from_secs(23 * 60 * 60)),
+        })
+    }
+
+    fn ensure_token(&mut self) -> Result<(), MetadataError> {
+        let needs_refresh = self
+            .token
+            .as_ref()
+            .and_then(|token| token.expires_at)
+            .map(|expires_at| Instant::now() >= expires_at)
+            .unwrap_or(true);
+        if needs_refresh {
+            self.token = Some(self.authenticate()?);
+        }
+        Ok(())
+    }
+
+    fn refresh_token(&mut self) -> Result<(), MetadataError> {
+        if self.token.is_none() {
+            return self.ensure_token();
+        }
+        let token_value = self
+            .token
+            .as_ref()
+            .map(|token| token.value.clone())
+            .unwrap_or_default();
+        let client = self.http_client()?;
+        let url = format!("{}/refresh_token", self.base_url);
+        let response = client
+            .get(url)
+            .headers(self.headers_for_token(&token_value)?)
+            .send()
+            .map_err(|err| {
+                if err.is_timeout() {
+                    MetadataError::Network("TheTVDB refresh request timed out.".to_string())
+                } else {
+                    MetadataError::Network(format!("TheTVDB refresh request failed: {err}"))
+                }
+            })?;
+        let status = response.status();
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            self.token = Some(self.authenticate()?);
+            return Ok(());
+        }
+        if !status.is_success() {
+            return Err(MetadataError::InvalidResponse(format!(
+                "TheTVDB refresh returned status {status}."
+            )));
+        }
+        let payload = response.json::<TheTvDbTokenResponse>().map_err(|err| {
+            MetadataError::InvalidResponse(format!(
+                "Failed to parse TheTVDB refresh response: {err}"
+            ))
+        })?;
+        self.token = Some(TheTvDbToken {
+            value: payload.data.token,
+            expires_at: Some(Instant::now() + Duration::from_secs(23 * 60 * 60)),
+        });
+        Ok(())
+    }
+
     fn get_json<T: for<'de> Deserialize<'de>>(
-        &self,
+        &mut self,
         path: &str,
-        query: &[(&str, &str)],
+        query: &[(String, String)],
     ) -> Result<T, MetadataError> {
+        self.get_json_with_retry(path, query, true)
+    }
+
+    fn get_json_with_retry<T: for<'de> Deserialize<'de>>(
+        &mut self,
+        path: &str,
+        query: &[(String, String)],
+        allow_retry: bool,
+    ) -> Result<T, MetadataError> {
+        self.ensure_token()?;
+        let token_value = self
+            .token
+            .as_ref()
+            .map(|token| token.value.clone())
+            .unwrap_or_default();
         let client = self.http_client()?;
         let url = format!("{}{}", self.base_url, path);
         let response = client
             .get(url)
-            .headers(self.headers()?)
+            .headers(self.headers_for_token(&token_value)?)
             .query(query)
             .send()
             .map_err(|err| {
@@ -117,6 +255,15 @@ impl TheTvDbClient {
                 }
             })?;
         let status = response.status();
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            if allow_retry {
+                self.refresh_token()?;
+                return self.get_json_with_retry(path, query, false);
+            }
+            return Err(MetadataError::Other(
+                "TheTVDB authorization failed after refresh.".to_string(),
+            ));
+        }
         if status == reqwest::StatusCode::NOT_FOUND {
             return Err(MetadataError::NotFound(
                 "TheTVDB did not return any results.".to_string(),
@@ -137,13 +284,18 @@ impl TheTvDbClient {
         })
     }
 
-    fn search_series(&self, query: &str) -> Result<Vec<TheTvDbSeries>, MetadataError> {
+    fn search_series(&mut self, query: &str) -> Result<Vec<TheTvDbSeries>, MetadataError> {
         #[derive(Deserialize)]
         struct SearchResponse {
             data: Option<Vec<TheTvDbSeries>>,
         }
-        let response: SearchResponse =
-            self.get_json("/search", &[("query", query), ("type", "series")])?;
+        let response: SearchResponse = self.get_json(
+            "/search",
+            &[
+                ("query".to_string(), query.to_string()),
+                ("type".to_string(), "series".to_string()),
+            ],
+        )?;
         let results = response.data.unwrap_or_default();
         if results.is_empty() {
             return Err(MetadataError::NotFound(
@@ -153,14 +305,42 @@ impl TheTvDbClient {
         Ok(results)
     }
 
-    fn fetch_episodes(&self, title_id: &str) -> Result<Vec<TheTvDbEpisode>, MetadataError> {
+    fn fetch_episodes(&mut self, title_id: &str) -> Result<Vec<TheTvDbEpisode>, MetadataError> {
         #[derive(Deserialize)]
         struct EpisodeResponse {
-            data: Option<Vec<TheTvDbEpisode>>,
+            data: Option<EpisodePayload>,
         }
-        let response: EpisodeResponse =
-            self.get_json(&format!("/series/{title_id}/episodes"), &[])?;
-        let episodes = response.data.unwrap_or_default();
+
+        #[derive(Deserialize)]
+        struct EpisodePayload {
+            #[serde(default)]
+            episodes: Vec<TheTvDbEpisode>,
+            #[serde(default)]
+            links: Option<EpisodeLinks>,
+        }
+
+        #[derive(Deserialize)]
+        struct EpisodeLinks {
+            #[serde(default)]
+            next: Option<u32>,
+        }
+
+        let mut page = 1;
+        let mut episodes = Vec::new();
+        loop {
+            let response: EpisodeResponse = self.get_json(
+                &format!("/series/{title_id}/episodes/default"),
+                &[("page".to_string(), page.to_string())],
+            )?;
+            if let Some(data) = response.data {
+                episodes.extend(data.episodes);
+                if data.links.and_then(|links| links.next).is_some() {
+                    page += 1;
+                    continue;
+                }
+            }
+            break;
+        }
         if episodes.is_empty() {
             return Err(MetadataError::NotFound(
                 "TheTVDB returned no episodes.".to_string(),
@@ -169,12 +349,13 @@ impl TheTvDbClient {
         Ok(episodes)
     }
 
-    fn fetch_movie(&self, title_id: &str) -> Result<TheTvDbMovieDetails, MetadataError> {
+    fn fetch_movie(&mut self, title_id: &str) -> Result<TheTvDbMovieDetails, MetadataError> {
         #[derive(Deserialize)]
         struct MovieResponse {
             data: Option<TheTvDbMovieDetails>,
         }
-        let response: MovieResponse = self.get_json(&format!("/movies/{title_id}"), &[])?;
+        let response: MovieResponse =
+            self.get_json(&format!("/movies/{title_id}"), &[])?;
         response.data.ok_or_else(|| {
             MetadataError::NotFound("TheTVDB returned no movie details.".to_string())
         })
@@ -247,6 +428,19 @@ impl TheTvDbClient {
         }
     }
 
+}
+
+fn deserialize_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    match value {
+        serde_json::Value::String(value) => Ok(value),
+        serde_json::Value::Number(number) => Ok(number.to_string()),
+        serde_json::Value::Bool(value) => Ok(value.to_string()),
+        _ => Err(de::Error::custom("Expected string-like value")),
+    }
 }
 
 impl MetadataProvider for TheTvDbClient {
