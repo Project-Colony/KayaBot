@@ -2,17 +2,18 @@ mod advanced;
 mod parsing;
 
 use crate::metadata::models::{EpisodeMatch, TitleMatch};
+use serde::{Deserialize, Serialize};
 pub use advanced::{NormalizedName, RankedCandidate, normalize_name, rank_candidates};
 pub use parsing::{ParsedName, parse_filename};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MatchStatus {
     Ok,
     Ambiguous,
     Error,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ContentGuess {
     Series,
     Movie,
@@ -20,13 +21,13 @@ pub enum ContentGuess {
     Unknown,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ContentType {
     Movie,
     Series,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MatchMetadata {
     Series {
         title: Option<String>,
@@ -43,7 +44,7 @@ pub enum MatchMetadata {
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MatchResult {
     pub original: String,
     pub metadata: Option<MatchMetadata>,
