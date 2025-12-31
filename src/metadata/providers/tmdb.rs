@@ -97,17 +97,78 @@ impl TmdbClient {
         Ok(headers)
     }
 
-    fn build_query(&self, query: &[(&str, &str)]) -> Vec<(String, String)> {
+    fn tmdb_locale(&self) -> (Option<String>, Option<String>) {
+        fn region_for_language(language: &str) -> Option<&'static str> {
+            match language {
+                "fr" => Some("FR"),
+                "en" => Some("US"),
+                "es" => Some("ES"),
+                "ja" => Some("JP"),
+                _ => None,
+            }
+        }
+
+        fn language_for_region(region: &str) -> Option<&'static str> {
+            match region {
+                "FR" => Some("fr"),
+                "US" => Some("en"),
+                "ES" => Some("es"),
+                "JP" => Some("ja"),
+                _ => None,
+            }
+        }
+
+        let mut language = self
+            .locale
+            .as_ref()
+            .and_then(|locale| locale.language.clone());
+        let mut region = self
+            .locale
+            .as_ref()
+            .and_then(|locale| locale.region.clone());
+
+        if language.is_none() && region.is_none() {
+            language = Some("fr".to_string());
+            region = Some("FR".to_string());
+        }
+
+        if region.is_none() {
+            if let Some(lang) = language.as_deref() {
+                if let Some(default_region) = region_for_language(lang) {
+                    region = Some(default_region.to_string());
+                }
+            }
+        }
+
+        if language.is_none() {
+            if let Some(country) = region.as_deref() {
+                if let Some(default_language) = language_for_region(country) {
+                    language = Some(default_language.to_string());
+                }
+            }
+        }
+
+        let tmdb_language = match (&language, &region) {
+            (Some(lang), Some(country)) => Some(format!("{lang}-{country}")),
+            (Some(lang), None) => Some(lang.clone()),
+            _ => None,
+        };
+
+        (tmdb_language, region)
+    }
+
+    fn build_query(&self, query: &[(&str, &str)], allow_region: bool) -> Vec<(String, String)> {
         let mut merged: Vec<(String, String)> = query
             .iter()
             .map(|(key, value)| (key.to_string(), value.to_string()))
             .collect();
-        if let Some(locale) = &self.locale {
-            if let Some(language) = locale.language.as_deref() {
-                merged.push(("language".to_string(), language.to_string()));
-            }
-            if let Some(region) = locale.region.as_deref() {
-                merged.push(("region".to_string(), region.to_string()));
+        let (language, region) = self.tmdb_locale();
+        if let Some(language) = language {
+            merged.push(("language".to_string(), language));
+        }
+        if allow_region {
+            if let Some(region) = region {
+                merged.push(("region".to_string(), region));
             }
         }
         merged
@@ -117,13 +178,14 @@ impl TmdbClient {
         &self,
         path: &str,
         query: &[(&str, &str)],
+        allow_region: bool,
     ) -> Result<T, MetadataError> {
         let client = self.http_client()?;
         let url = format!("{}{}", self.base_url, path);
         let response = client
             .get(url)
             .headers(self.headers()?)
-            .query(&self.build_query(query))
+            .query(&self.build_query(query, allow_region))
             .send()
             .map_err(|err| {
                 if err.is_timeout() {
@@ -166,6 +228,7 @@ impl TmdbClient {
         let response: SearchResponse = self.get_json(
             "/search/multi",
             &[("query", query), ("include_adult", "false")],
+            true,
         )?;
         if response.results.is_empty() {
             return Err(MetadataError::NotFound(
@@ -176,7 +239,7 @@ impl TmdbClient {
     }
 
     fn fetch_tv_details(&self, title_id: &str) -> Result<TmdbTvDetails, MetadataError> {
-        self.get_json(&format!("/tv/{title_id}"), &[])
+        self.get_json(&format!("/tv/{title_id}"), &[], false)
     }
 
     fn fetch_season(
@@ -184,11 +247,15 @@ impl TmdbClient {
         title_id: &str,
         season_number: u32,
     ) -> Result<TmdbSeasonDetails, MetadataError> {
-        self.get_json(&format!("/tv/{title_id}/season/{season_number}"), &[])
+        self.get_json(
+            &format!("/tv/{title_id}/season/{season_number}"),
+            &[],
+            false,
+        )
     }
 
     fn fetch_movie(&self, title_id: &str) -> Result<TmdbMovieDetails, MetadataError> {
-        self.get_json(&format!("/movie/{title_id}"), &[])
+        self.get_json(&format!("/movie/{title_id}"), &[], false)
     }
 
     fn normalize_title(&self, title: TmdbTitle) -> TitleMatch {
