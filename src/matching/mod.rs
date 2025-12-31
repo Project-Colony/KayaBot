@@ -3,6 +3,7 @@ mod parsing;
 
 pub use advanced::{NormalizedName, RankedCandidate, normalize_name, rank_candidates};
 pub use parsing::{ParsedName, parse_filename};
+use crate::metadata::models::{EpisodeMatch, TitleMatch};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MatchStatus {
@@ -43,6 +44,8 @@ pub struct MatchResult {
     pub candidates: Vec<MatchMetadata>,
     pub confidence: f32,
     pub status: MatchStatus,
+    pub title_match: Option<TitleMatch>,
+    pub episode_match: Option<EpisodeMatch>,
 }
 
 pub fn match_files(files: &[String]) -> Vec<MatchResult> {
@@ -133,5 +136,7 @@ fn match_single(filename: &str) -> MatchResult {
         candidates,
         confidence,
         status,
+        title_match: None,
+        episode_match: None,
     }
 }

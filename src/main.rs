@@ -1094,7 +1094,7 @@ environment variables.",
         if response.clicked() {
             println!("Action clicked: {label}");
             if label == "Match" {
-                self.match_results = matching::match_files(&self.original_files);
+                self.match_results = self.match_files_with_metadata();
                 self.apply_content_detection();
                 self.rename_feedback = None;
                 self.refresh_rename_ui_state();
@@ -1103,6 +1103,83 @@ environment variables.",
                 let unmatched = self.original_files.len().saturating_sub(matched);
                 self.rename_feedback = Some((matched, unmatched));
             }
+        }
+    }
+
+    fn match_files_with_metadata(&mut self) -> Vec<matching::MatchResult> {
+        let base_results = matching::match_files(&self.original_files);
+        let mut results = Vec::with_capacity(base_results.len());
+        for mut result in base_results {
+            self.apply_metadata_match(&mut result);
+            results.push(result);
+        }
+        results
+    }
+
+    fn apply_metadata_match(&mut self, result: &mut matching::MatchResult) {
+        let Some(query) = self.match_query_for_result(result) else {
+            return;
+        };
+        let Ok(title_matches) = self.metadata_provider.search_title(&query) else {
+            return;
+        };
+        let Some(best_title) = title_matches.iter().max_by(|a, b| {
+            a.global_score
+                .partial_cmp(&b.global_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        }) else {
+            return;
+        };
+        result.title_match = Some(best_title.clone());
+
+        let Some((season, episode)) = self.episode_hint(result) else {
+            return;
+        };
+        let Ok(episodes) = self.metadata_provider.fetch_episode_list(&best_title.id) else {
+            return;
+        };
+        result.episode_match = episodes
+            .iter()
+            .filter(|episode_match| {
+                episode_match.season == season && episode_match.episode == episode
+            })
+            .max_by(|a, b| {
+                a.global_score
+                    .partial_cmp(&b.global_score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .cloned();
+    }
+
+    fn match_query_for_result(&self, result: &matching::MatchResult) -> Option<String> {
+        let detected = self.detected_series_name.trim();
+        match &result.metadata {
+            Some(matching::MatchMetadata::Series { title }) => title
+                .clone()
+                .or_else(|| (!detected.is_empty()).then(|| detected.to_string())),
+            Some(matching::MatchMetadata::Episode { series_title, .. }) => series_title
+                .clone()
+                .or_else(|| (!detected.is_empty()).then(|| detected.to_string())),
+            Some(matching::MatchMetadata::Movie { title, year }) => {
+                let Some(title) = title.clone() else {
+                    return None;
+                };
+                let mut query = title;
+                if let Some(year) = year {
+                    query = format!("{query} {year}");
+                }
+                Some(query)
+            }
+            None => None,
+        }
+    }
+
+    fn episode_hint(&self, result: &matching::MatchResult) -> Option<(u32, u32)> {
+        match &result.metadata {
+            Some(matching::MatchMetadata::Episode { season, episode, .. }) => {
+                Some((*season, *episode))
+            }
+            _ => None,
         }
     }
 
@@ -1506,6 +1583,68 @@ environment variables.",
     }
 
     fn format_preview(&self, result: &matching::MatchResult) -> String {
+        let detected = self.detected_series_name.trim();
+        if let Some(episode_match) = &result.episode_match {
+            let series_name = result
+                .title_match
+                .as_ref()
+                .map(|title| title.name.as_str())
+                .or_else(|| (!detected.is_empty()).then_some(detected))
+                .or_else(|| {
+                    result.metadata.as_ref().and_then(|metadata| match metadata {
+                        matching::MatchMetadata::Episode { series_title, .. } => {
+                            series_title.as_deref()
+                        }
+                        _ => None,
+                    })
+                })
+                .unwrap_or("Unknown Series");
+            return formatting::format_series_name(
+                SeriesFormatInput {
+                    series: series_name,
+                    season: episode_match.season,
+                    episode: episode_match.episode,
+                    title: Some(episode_match.title.as_str()),
+                    year: None,
+                },
+                self.format_options,
+            );
+        }
+
+        if let Some(title_match) = &result.title_match {
+            let year = title_match.year.map(|year| year as u32);
+            let metadata = result.metadata.as_ref();
+            let is_episode = matches!(
+                metadata,
+                Some(matching::MatchMetadata::Episode { .. })
+            );
+            if is_episode {
+                let (season, episode) = self
+                    .episode_hint(result)
+                    .unwrap_or((1, 1));
+                return formatting::format_series_name(
+                    SeriesFormatInput {
+                        series: &title_match.name,
+                        season,
+                        episode,
+                        title: None,
+                        year,
+                    },
+                    self.format_options,
+                );
+            }
+            if matches!(metadata, Some(matching::MatchMetadata::Movie { .. })) {
+                return formatting::format_movie_name(
+                    MovieFormatInput {
+                        title: &title_match.name,
+                        year,
+                    },
+                    self.format_options,
+                );
+            }
+            return title_match.name.clone();
+        }
+
         let Some(metadata) = &result.metadata else {
             return "—".to_string();
         };
@@ -1520,21 +1659,15 @@ environment variables.",
                 episode,
                 episode_title,
             } => {
-                let series_name = if self.detected_series_name.trim().is_empty() {
+                let series_name = if detected.is_empty() {
                     series_title
                         .clone()
                         .unwrap_or_else(|| "Unknown Series".to_string())
                 } else {
-                    self.detected_series_name.clone()
+                    detected.to_string()
                 };
-                let resolved_title = self
-                    .episode_matches
-                    .iter()
-                    .find(|episode_match| {
-                        episode_match.season == *season && episode_match.episode == *episode
-                    })
-                    .map(|episode_match| episode_match.title.as_str())
-                    .or_else(|| episode_title.as_deref())
+                let resolved_title = episode_title
+                    .as_deref()
                     .or_else(|| series_title.as_deref());
 
                 formatting::format_series_name(
