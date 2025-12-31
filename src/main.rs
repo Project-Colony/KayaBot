@@ -1822,7 +1822,7 @@ environment variables.",
                     ui.label("Sélectionnez un fichier pour ajuster le match.");
                     return;
                 };
-                let Some(file_name) = self.original_files.get(file_index) else {
+                let Some(file_name) = self.original_files.get(file_index).cloned() else {
                     ui.label("Fichier introuvable.");
                     return;
                 };
@@ -1831,6 +1831,9 @@ environment variables.",
 
                 let mut selected_id = None;
                 let mut should_fetch = false;
+                let title_matches = self.title_matches.clone();
+                let episode_matches = self.episode_matches.clone();
+                let selected_title_id = self.selected_title_id.clone();
                 if self.title_matches.is_empty() {
                     ui.label("Fetch data first to see matches.");
                 } else {
@@ -1838,20 +1841,20 @@ environment variables.",
                         ui.vertical(|ui| {
                             ui.label(RichText::new("Matches disponibles").strong());
                             ui.add_space(4.0);
-                            for title in &self.title_matches {
+                            for title in &title_matches {
                                 let label = self.format_title_match_summary(title);
                                 let selected =
-                                    self.selected_title_id.as_deref() == Some(&title.id);
+                                    selected_title_id.as_deref() == Some(&title.id);
                                 if ui.selectable_label(selected, label).clicked() {
                                     selected_id = Some(title.id.clone());
                                     should_fetch = self.content_type == ContentType::Series;
                                     let mut override_entry = self
                                         .manual_overrides
-                                        .get(file_name)
+                                        .get(&file_name)
                                         .cloned()
                                         .unwrap_or_default();
                                     override_entry.title = Some(title.name.clone());
-                                    self.set_manual_override(file_name, override_entry);
+                                    self.set_manual_override(&file_name, override_entry);
                                 }
                             }
                         });
@@ -1881,10 +1884,10 @@ environment variables.",
                                         .max_height(160.0)
                                         .show(ui, |ui| {
                                             let current_override = self
-                                                .manual_override_for(file_name)
+                                                .manual_override_for(&file_name)
                                                 .cloned()
                                                 .unwrap_or_default();
-                                            for episode in &self.episode_matches {
+                                            for episode in &episode_matches {
                                                 let label = format!(
                                                     "S{:02}E{:02} - {}",
                                                     episode.season, episode.episode, episode.title
@@ -1909,7 +1912,7 @@ environment variables.",
                                                         }
                                                     }
                                                     self.set_manual_override(
-                                                        file_name,
+                                                        &file_name,
                                                         override_entry,
                                                     );
                                                 }
@@ -1933,7 +1936,7 @@ environment variables.",
                 ui.label(RichText::new("Override manuel").strong());
                 let palette = self.theme_palette();
                 let current_override = self
-                    .manual_override_for(file_name)
+                    .manual_override_for(&file_name)
                     .cloned()
                     .unwrap_or_default();
                 let mut title_input = current_override.title.unwrap_or_default();
@@ -1976,7 +1979,7 @@ environment variables.",
                         Some(title_input.trim().to_string())
                     };
                     self.set_manual_override(
-                        file_name,
+                        &file_name,
                         ManualOverride {
                             title: title_value,
                             season: season_value,
@@ -1992,7 +1995,7 @@ environment variables.",
                     );
                 }
                 if ui.button("Effacer l'override").clicked() {
-                    self.manual_overrides.remove(file_name);
+                    self.manual_overrides.remove(&file_name);
                 }
             });
         self.show_match_picker = open;
