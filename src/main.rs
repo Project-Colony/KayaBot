@@ -16,7 +16,7 @@ use metadata::providers::{
     anidb::AniDbClient, omdb::OmdbClient, thetvdb::TheTvDbClient, tmdb::TmdbClient,
     tvmaze::TvMazeClient,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     env, fs,
@@ -91,6 +91,54 @@ struct RenameExportRow {
     final_path: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+struct AppConfig {
+    original_files: Vec<String>,
+    match_results: Vec<matching::MatchResult>,
+    format_options: FormatOptions,
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            original_files: Vec::new(),
+            match_results: Vec::new(),
+            format_options: FormatOptions::default(),
+        }
+    }
+}
+
+impl AppConfig {
+    fn load() -> Option<Self> {
+        let path = Self::config_path()?;
+        let contents = fs::read_to_string(path).ok()?;
+        toml::from_str(&contents).ok()
+    }
+
+    fn save(&self) {
+        let Some(path) = Self::config_path() else {
+            return;
+        };
+        if let Some(parent) = path.parent() {
+            if let Err(err) = fs::create_dir_all(parent) {
+                eprintln!("Failed to create config directory: {err}");
+                return;
+            }
+        }
+        let Ok(payload) = toml::to_string_pretty(self) else {
+            return;
+        };
+        if let Err(err) = fs::write(path, payload) {
+            eprintln!("Failed to save config: {err}");
+        }
+    }
+
+    fn config_path() -> Option<PathBuf> {
+        dirs::config_dir().map(|base| base.join("Colony").join("KayaBot").join("config.toml"))
+    }
+}
+
 struct RenameApp {
     active_left_nav: LeftNav,
     original_files: Vec<String>,
@@ -123,9 +171,25 @@ struct RenameApp {
 
 impl Default for RenameApp {
     fn default() -> Self {
-        let original_files = Vec::new();
-        let match_results = Vec::new();
-        let rename_ui_state = RenameUiState::Empty;
+        let app_config = AppConfig::load();
+        let original_files = app_config
+            .as_ref()
+            .map(|config| config.original_files.clone())
+            .unwrap_or_default();
+        let match_results = app_config
+            .as_ref()
+            .map(|config| config.match_results.clone())
+            .unwrap_or_default();
+        let format_options = app_config
+            .as_ref()
+            .map(|config| config.format_options.clone())
+            .or_else(FormatOptions::load)
+            .unwrap_or_default();
+        let rename_ui_state = if match_results.is_empty() {
+            RenameUiState::Empty
+        } else {
+            RenameUiState::Success(match_results.len())
+        };
         let api_config = ApiConfig::from_env();
         let mut metadata_provider = MetadataPipeline::new(vec![
             (
@@ -155,7 +219,7 @@ impl Default for RenameApp {
             MetadataSource::AniDb,
         ]);
 
-        Self {
+        let mut app = Self {
             active_left_nav: LeftNav::Rename,
             original_files,
             match_results,
@@ -171,7 +235,7 @@ impl Default for RenameApp {
             rename_feedback_message: None,
             rename_dry_run: false,
             rename_summaries: Vec::new(),
-            format_options: FormatOptions::load().unwrap_or_default(),
+            format_options,
             metadata_provider,
             rename_ui_state,
             active_metadata_source: MetadataSource::TheTvDb,
@@ -183,7 +247,12 @@ impl Default for RenameApp {
             active_settings_section: SettingsSection::Program,
             user_preferences: UserPreferences::load().unwrap_or_default(),
             system_visuals: None,
+        };
+        if !app.match_results.is_empty() {
+            app.apply_content_detection();
+            app.refresh_rename_ui_state();
         }
+        app
     }
 }
 
@@ -339,6 +408,16 @@ impl RenameApp {
         self.rename_summaries.clear();
         self.prune_manual_overrides();
         self.refresh_rename_ui_state();
+        self.persist_config();
+    }
+
+    fn persist_config(&self) {
+        let config = AppConfig {
+            original_files: self.original_files.clone(),
+            match_results: self.match_results.clone(),
+            format_options: self.format_options.clone(),
+        };
+        config.save();
     }
 
     fn prune_manual_overrides(&mut self) {
@@ -1204,6 +1283,7 @@ environment variables.",
                 self.rename_feedback_message = None;
                 self.rename_summaries.clear();
                 self.refresh_rename_ui_state();
+                self.persist_config();
             } else if label == "Rename" {
                 self.perform_rename();
             }
@@ -1241,6 +1321,7 @@ environment variables.",
             self.manual_overrides.clear();
             self.match_results = matching::match_files(&self.original_files);
             self.apply_content_detection();
+            self.persist_config();
         }
 
         self.refresh_rename_ui_state();
@@ -2013,6 +2094,7 @@ environment variables.",
             }
             if format_changed {
                 self.format_options.save();
+                self.persist_config();
             }
             ui.label(
                 RichText::new(default_template)
