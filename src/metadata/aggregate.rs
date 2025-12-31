@@ -77,6 +77,19 @@ impl MetadataPipeline {
         self.active_source
     }
 
+    pub fn active_sources(&self) -> &[MetadataSource] {
+        &self.active_sources
+    }
+
+    pub fn set_active_source(&mut self, source: MetadataSource) {
+        if self.providers.iter().any(|entry| entry.source == source) {
+            self.active_source = source;
+            if !self.active_sources.contains(&source) {
+                self.active_sources.push(source);
+            }
+        }
+    }
+
     fn provider_mut(&mut self, source: MetadataSource) -> Option<&mut (dyn MetadataProvider + '_)> {
         let entry = self
             .providers

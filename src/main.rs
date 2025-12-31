@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     env, fs,
+    io,
     path::{Path, PathBuf},
 };
 
@@ -164,6 +165,8 @@ struct RenameApp {
     detection_notice: Option<String>,
     force_metadata_source: bool,
     api_config: ApiConfig,
+    config_load_status: ConfigLoadStatus,
+    config_feedback_message: Option<String>,
     active_settings_section: SettingsSection,
     user_preferences: UserPreferences,
     system_visuals: Option<egui::Visuals>,
@@ -190,29 +193,8 @@ impl Default for RenameApp {
         } else {
             RenameUiState::Success(match_results.len())
         };
-        let api_config = ApiConfig::from_env();
-        let mut metadata_provider = MetadataPipeline::new(vec![
-            (
-                MetadataSource::TheMovieDb,
-                Box::new(TmdbClient::new(api_config.tmdb_token.clone())),
-            ),
-            (
-                MetadataSource::AniDb,
-                Box::new(AniDbClient::new(api_config.anidb_api_key.clone())),
-            ),
-            (
-                MetadataSource::TheTvDb,
-                Box::new(TheTvDbClient::new(api_config.tvdb_api_key.clone())),
-            ),
-            (
-                MetadataSource::TvMaze,
-                Box::new(TvMazeClient::new(api_config.tvmaze_user_agent.clone())),
-            ),
-            (
-                MetadataSource::Omdb,
-                Box::new(OmdbClient::new(api_config.omdb_api_key.clone())),
-            ),
-        ]);
+        let (api_config, config_load_status) = ApiConfig::from_env();
+        let mut metadata_provider = Self::build_metadata_pipeline(&api_config);
         metadata_provider.set_active_sources(vec![
             MetadataSource::TheTvDb,
             MetadataSource::TvMaze,
@@ -244,6 +226,8 @@ impl Default for RenameApp {
             detection_notice: None,
             force_metadata_source: false,
             api_config,
+            config_load_status,
+            config_feedback_message: None,
             active_settings_section: SettingsSection::Program,
             user_preferences: UserPreferences::load().unwrap_or_default(),
             system_visuals: None,
@@ -908,12 +892,53 @@ or tvmaze_api_key.",
                     .color(palette.subtext0),
             );
         }
+        if let Some(message) = self.config_load_status.message() {
+            ui.label(RichText::new(message).size(11.0).color(palette.danger));
+        }
         ui.add_space(6.0);
-        self.settings_status_row(ui, "TMDB", self.api_config.tmdb_configured());
-        self.settings_status_row(ui, "TVDB", self.api_config.tvdb_configured());
-        self.settings_status_row(ui, "OMDB", self.api_config.omdb_configured());
-        self.settings_status_row(ui, "AniDB", self.api_config.anidb_configured());
-        self.settings_status_row(ui, "TVMaze", self.api_config.tvmaze_configured());
+        ui.horizontal(|ui| {
+            if ui.button("Reload config").clicked() {
+                self.reload_api_config();
+                self.config_feedback_message = Some("Config reloaded.".to_string());
+            }
+            if ui.button("Open config folder").clicked() {
+                self.open_config_folder();
+            }
+        });
+        if let Some(message) = &self.config_feedback_message {
+            ui.label(RichText::new(message).size(11.0).color(palette.subtext0));
+        }
+        ui.add_space(6.0);
+        self.settings_status_row(
+            ui,
+            "TMDB",
+            self.api_config.tmdb_configured(),
+            "tmdb_bearer_token or tmdb_api_key",
+        );
+        self.settings_status_row(
+            ui,
+            "TVDB",
+            self.api_config.tvdb_configured(),
+            "tvdb_api_key",
+        );
+        self.settings_status_row(
+            ui,
+            "OMDB",
+            self.api_config.omdb_configured(),
+            "omdb_api_key",
+        );
+        self.settings_status_row(
+            ui,
+            "AniDB",
+            self.api_config.anidb_configured(),
+            "anidb_password or anidb_api_key",
+        );
+        self.settings_status_row(
+            ui,
+            "TVMaze",
+            self.api_config.tvmaze_configured(),
+            "tvmaze_user_agent or tvmaze_api_key",
+        );
         changed
     }
 
@@ -1062,7 +1087,13 @@ or tvmaze_api_key.",
         changed
     }
 
-    fn settings_status_row(&self, ui: &mut egui::Ui, label: &str, configured: bool) {
+    fn settings_status_row(
+        &self,
+        ui: &mut egui::Ui,
+        label: &str,
+        configured: bool,
+        expected_keys: &str,
+    ) {
         let palette = self.theme_palette();
         let status = if configured { "Configured" } else { "Missing" };
         let color = if configured {
@@ -1070,10 +1101,74 @@ or tvmaze_api_key.",
         } else {
             palette.danger
         };
-        ui.horizontal(|ui| {
-            ui.label(format!("{label}:"));
-            ui.label(RichText::new(status).color(color));
+        ui.vertical(|ui| {
+            ui.horizontal(|ui| {
+                ui.label(format!("{label}:"));
+                ui.label(RichText::new(status).color(color));
+            });
+            ui.label(
+                RichText::new(format!("Keys: {expected_keys}"))
+                    .size(10.0)
+                    .color(palette.subtext0),
+            );
         });
+    }
+
+    fn build_metadata_pipeline(api_config: &ApiConfig) -> MetadataPipeline {
+        MetadataPipeline::new(vec![
+            (
+                MetadataSource::TheMovieDb,
+                Box::new(TmdbClient::new(api_config.tmdb_token.clone())),
+            ),
+            (
+                MetadataSource::AniDb,
+                Box::new(AniDbClient::new(api_config.anidb_api_key.clone())),
+            ),
+            (
+                MetadataSource::TheTvDb,
+                Box::new(TheTvDbClient::new(api_config.tvdb_api_key.clone())),
+            ),
+            (
+                MetadataSource::TvMaze,
+                Box::new(TvMazeClient::new(api_config.tvmaze_user_agent.clone())),
+            ),
+            (
+                MetadataSource::Omdb,
+                Box::new(OmdbClient::new(api_config.omdb_api_key.clone())),
+            ),
+        ])
+    }
+
+    fn reload_api_config(&mut self) {
+        let active_sources = self.metadata_provider.active_sources().to_vec();
+        let active_source = self.metadata_provider.active_source();
+        let (api_config, config_load_status) = ApiConfig::from_env();
+        self.api_config = api_config;
+        self.config_load_status = config_load_status;
+        let mut metadata_provider = Self::build_metadata_pipeline(&self.api_config);
+        if !active_sources.is_empty() {
+            metadata_provider.set_active_sources(active_sources);
+            metadata_provider.set_active_source(active_source);
+        }
+        self.metadata_provider = metadata_provider;
+    }
+
+    fn open_config_folder(&mut self) {
+        let Some(path) = config_root() else {
+            self.config_feedback_message =
+                Some("Config folder not available on this system.".to_string());
+            return;
+        };
+        match open::that(&path) {
+            Ok(()) => {
+                self.config_feedback_message =
+                    Some(format!("Opened config folder: {}", path.display()));
+            }
+            Err(err) => {
+                self.config_feedback_message =
+                    Some(format!("Failed to open config folder: {err}"));
+            }
+        }
     }
 
     fn placeholder_content(&mut self, ui: &mut egui::Ui) {
@@ -2811,8 +2906,8 @@ struct ApiConfig {
 }
 
 impl ApiConfig {
-    fn from_env() -> Self {
-        let config = ConfigFile::load();
+    fn from_env() -> (Self, ConfigLoadStatus) {
+        let (config, load_status) = ConfigFile::load();
         let tmdb_token = Self::env_value("KAYABOT_TMDB_BEARER_TOKEN")
             .or_else(|| Self::env_value("KAYABOT_TMDB_API_KEY"))
             .or_else(|| {
@@ -2843,13 +2938,15 @@ impl ApiConfig {
             .or_else(|| config.as_ref().and_then(|cfg| cfg.tvmaze_api_key.clone()))
             .unwrap_or_else(|| "KayaBot".to_string());
 
-        Self {
+        let config = Self {
             tmdb_token,
             tvdb_api_key,
             omdb_api_key,
             anidb_api_key,
             tvmaze_user_agent,
-        }
+        };
+
+        (config, load_status)
     }
 
     fn env_value(key: &str) -> Option<String> {
@@ -2887,6 +2984,63 @@ impl ApiConfig {
     }
 }
 
+#[derive(Debug, Clone)]
+enum ConfigLoadState {
+    Loaded,
+    Missing,
+    Unreadable,
+}
+
+#[derive(Debug, Clone)]
+struct ConfigLoadStatus {
+    path: Option<PathBuf>,
+    state: ConfigLoadState,
+}
+
+impl ConfigLoadStatus {
+    fn loaded(path: Option<PathBuf>) -> Self {
+        Self {
+            path,
+            state: ConfigLoadState::Loaded,
+        }
+    }
+
+    fn missing(path: Option<PathBuf>) -> Self {
+        Self {
+            path,
+            state: ConfigLoadState::Missing,
+        }
+    }
+
+    fn unreadable(path: Option<PathBuf>) -> Self {
+        Self {
+            path,
+            state: ConfigLoadState::Unreadable,
+        }
+    }
+
+    fn message(&self) -> Option<String> {
+        match self.state {
+            ConfigLoadState::Loaded => None,
+            ConfigLoadState::Missing => Some(format!(
+                "config.toml introuvable{}",
+                self.path_suffix()
+            )),
+            ConfigLoadState::Unreadable => Some(format!(
+                "config.toml illisible{}",
+                self.path_suffix()
+            )),
+        }
+    }
+
+    fn path_suffix(&self) -> String {
+        self.path
+            .as_ref()
+            .map(|path| format!(", utilisé: {}", path.display()))
+            .unwrap_or_default()
+    }
+}
+
 #[derive(Debug, Clone, serde::Deserialize, Default)]
 struct ConfigFile {
     tmdb_bearer_token: Option<String>,
@@ -2900,10 +3054,24 @@ struct ConfigFile {
 }
 
 impl ConfigFile {
-    fn load() -> Option<Self> {
-        let path = ApiConfig::config_path()?;
-        let contents = fs::read_to_string(path).ok()?;
-        toml::from_str(&contents).ok()
+    fn load() -> (Option<Self>, ConfigLoadStatus) {
+        let path = ApiConfig::config_path();
+        let Some(path) = path else {
+            return (None, ConfigLoadStatus::missing(None));
+        };
+        match fs::read_to_string(&path) {
+            Ok(contents) => match toml::from_str(&contents) {
+                Ok(config) => (Some(config), ConfigLoadStatus::loaded(Some(path))),
+                Err(_) => (None, ConfigLoadStatus::unreadable(Some(path))),
+            },
+            Err(err) => {
+                if err.kind() == io::ErrorKind::NotFound {
+                    (None, ConfigLoadStatus::missing(Some(path)))
+                } else {
+                    (None, ConfigLoadStatus::unreadable(Some(path)))
+                }
+            }
+        }
     }
 }
 
