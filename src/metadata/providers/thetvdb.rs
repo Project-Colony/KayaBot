@@ -97,6 +97,9 @@ impl TheTvDbClient {
             );
         }
         headers.insert("Accept".to_string(), "application/json".to_string());
+        if let Some(language) = self.accept_language() {
+            headers.insert("Accept-Language".to_string(), language);
+        }
         headers
     }
 
@@ -121,7 +124,25 @@ impl TheTvDbClient {
                 MetadataError::Other(format!("Invalid TheTVDB accept header: {err}"))
             })?,
         );
+        if let Some(language) = self.accept_language() {
+            headers.insert(
+                reqwest::header::ACCEPT_LANGUAGE,
+                language.parse().map_err(|err| {
+                    MetadataError::Other(format!("Invalid TheTVDB language header: {err}"))
+                })?,
+            );
+        }
         Ok(headers)
+    }
+
+    fn accept_language(&self) -> Option<String> {
+        let locale = self.locale.as_ref()?;
+        let language = locale.language.as_deref()?;
+        let region = locale.region.as_deref();
+        Some(match region {
+            Some(region) => format!("{language}-{region}"),
+            None => language.to_string(),
+        })
     }
 
     fn build_query(&self, query: &[(String, String)]) -> Vec<(String, String)> {
