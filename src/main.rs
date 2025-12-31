@@ -8,6 +8,7 @@ use eframe::egui::{
 use formatting::{
     DEFAULT_MOVIE_FORMAT, DEFAULT_SERIES_FORMAT, FormatOptions, MovieFormatInput, SeriesFormatInput,
 };
+use matching::ContentType;
 use metadata::aggregate::MetadataPipeline;
 use metadata::models::{EpisodeMatch, TitleMatch};
 use metadata::provider::{MetadataProvider, MetadataSource};
@@ -38,12 +39,6 @@ enum SettingsSection {
     Appearance,
     Experience,
     Utilities,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ContentType {
-    Movie,
-    Series,
 }
 
 #[derive(Debug, Clone)]
@@ -85,7 +80,6 @@ struct RenameApp {
     original_files: Vec<String>,
     match_results: Vec<matching::MatchResult>,
     selected_file_index: Option<usize>,
-    content_type: ContentType,
     detected_series_name: String,
     fetch_status: FetchStatus,
     title_matches: Vec<TitleMatch>,
@@ -150,7 +144,6 @@ impl Default for RenameApp {
             original_files,
             match_results,
             selected_file_index: None,
-            content_type: ContentType::Series,
             detected_series_name: String::new(),
             fetch_status: FetchStatus::Idle,
             title_matches: Vec::new(),
@@ -605,9 +598,7 @@ impl RenameApp {
                             .add_sized(Vec2::new(32.0, 26.0), Button::new("🔧"))
                             .clicked();
                         if adjust_clicked {
-                            if app.selected_file_index.is_none()
-                                && !app.original_files.is_empty()
-                            {
+                            if app.selected_file_index.is_none() && !app.original_files.is_empty() {
                                 app.selected_file_index = Some(0);
                             }
                             app.match_picker_file_index = app.selected_file_index;
@@ -1053,8 +1044,8 @@ environment variables.",
 
     fn switch_metadata_source(&mut self, source: MetadataSource, content_type: ContentType) {
         self.active_metadata_source = source;
-        self.content_type = content_type;
-        self.refresh_active_sources();
+        self.set_content_type_for_selected_or_all(content_type);
+        self.refresh_active_sources(content_type);
         self.fetch_status = FetchStatus::Idle;
         self.title_matches.clear();
         self.episode_matches.clear();
@@ -1069,12 +1060,12 @@ environment variables.",
         self.refresh_rename_ui_state();
     }
 
-    fn refresh_active_sources(&mut self) {
+    fn refresh_active_sources(&mut self, content_type: ContentType) {
         let sources = if self.force_metadata_source {
             vec![self.active_metadata_source]
         } else {
             let mut sources = vec![self.active_metadata_source];
-            sources.extend(self.fallback_sources(self.content_type, self.active_metadata_source));
+            sources.extend(self.fallback_sources(content_type, self.active_metadata_source));
             sources
         };
         self.metadata_provider.set_active_sources(sources);
@@ -1171,8 +1162,13 @@ environment variables.",
             let Some(result) = self.match_results.get(index) else {
                 break;
             };
-            let summary =
-                self.rename_single_file(index, original, result, &mut used_targets, &mut updated_files);
+            let summary = self.rename_single_file(
+                index,
+                original,
+                result,
+                &mut used_targets,
+                &mut updated_files,
+            );
             self.rename_summaries.push(summary);
         }
 
@@ -1287,11 +1283,7 @@ environment variables.",
         parent.join(file_name)
     }
 
-    fn resolve_collision(
-        &self,
-        target: &Path,
-        used_targets: &HashSet<PathBuf>,
-    ) -> (PathBuf, bool) {
+    fn resolve_collision(&self, target: &Path, used_targets: &HashSet<PathBuf>) -> (PathBuf, bool) {
         if !target.exists() && !used_targets.contains(target) {
             return (target.to_path_buf(), false);
         }
@@ -1401,14 +1393,8 @@ environment variables.",
                 format!("Déjà nommé → {}{collision_note}", summary.resolved),
                 palette.subtext0,
             ),
-            RenameOutcome::Skipped(message) => (
-                format!("Ignoré: {message}"),
-                palette.subtext0,
-            ),
-            RenameOutcome::Failed(message) => (
-                format!("Échec: {message}"),
-                palette.danger,
-            ),
+            RenameOutcome::Skipped(message) => (format!("Ignoré: {message}"), palette.subtext0),
+            RenameOutcome::Failed(message) => (format!("Échec: {message}"), palette.danger),
         }
     }
 
@@ -1422,7 +1408,58 @@ environment variables.",
         results
     }
 
+    fn content_type_for_result(&self, result: &matching::MatchResult) -> Option<ContentType> {
+        result.content_type.or_else(|| match result.metadata {
+            Some(matching::MatchMetadata::Movie { .. }) => Some(ContentType::Movie),
+            Some(matching::MatchMetadata::Series { .. })
+            | Some(matching::MatchMetadata::Episode { .. }) => Some(ContentType::Series),
+            None => None,
+        })
+    }
+
+    fn active_content_type(&self) -> ContentType {
+        self.selected_file_index
+            .and_then(|index| self.match_results.get(index))
+            .and_then(|result| self.content_type_for_result(result))
+            .or_else(|| {
+                self.match_results
+                    .first()
+                    .and_then(|result| self.content_type_for_result(result))
+            })
+            .unwrap_or(ContentType::Series)
+    }
+
+    fn content_type_for_file(&self, file_name: &str) -> Option<ContentType> {
+        self.match_results
+            .iter()
+            .find(|result| result.original == file_name)
+            .and_then(|result| self.content_type_for_result(result))
+    }
+
+    fn set_content_type_for_selected_or_all(&mut self, content_type: ContentType) {
+        if let Some(index) = self.selected_file_index {
+            if let Some(result) = self.match_results.get_mut(index) {
+                result.content_type = Some(content_type);
+            }
+        } else {
+            for result in &mut self.match_results {
+                result.content_type = Some(content_type);
+            }
+        }
+    }
+
     fn apply_metadata_match(&mut self, result: &mut matching::MatchResult) {
+        let content_type = self
+            .content_type_for_result(result)
+            .unwrap_or(ContentType::Series);
+        if !self.force_metadata_source {
+            self.active_metadata_source = match content_type {
+                ContentType::Movie => self.preferred_movie_source,
+                ContentType::Series => self.preferred_series_source,
+            };
+        }
+        self.refresh_active_sources(content_type);
+
         let Some(query) = self.match_query_for_result(result) else {
             return;
         };
@@ -1448,10 +1485,9 @@ environment variables.",
         };
         let mut candidate_count = 0usize;
         let mut best_episode: Option<&EpisodeMatch> = None;
-        for episode_match in episodes
-            .iter()
-            .filter(|episode_match| episode_match.season == season && episode_match.episode == episode)
-        {
+        for episode_match in episodes.iter().filter(|episode_match| {
+            episode_match.season == season && episode_match.episode == episode
+        }) {
             candidate_count += 1;
             let should_replace = best_episode
                 .as_ref()
@@ -1495,9 +1531,9 @@ environment variables.",
 
     fn episode_hint(&self, result: &matching::MatchResult) -> Option<(u32, u32)> {
         match &result.metadata {
-            Some(matching::MatchMetadata::Episode { season, episode, .. }) => {
-                Some((*season, *episode))
-            }
+            Some(matching::MatchMetadata::Episode {
+                season, episode, ..
+            }) => Some((*season, *episode)),
             _ => None,
         }
     }
@@ -1515,15 +1551,26 @@ environment variables.",
             }
         }
 
+        let mut content_type = self.active_content_type();
         if let Some(hint) = parsed_hint.as_ref() {
             let has_episode = hint.season.is_some() || hint.episode.is_some();
             let has_year = hint.year.is_some();
-            if has_episode && self.content_type != ContentType::Series {
+            if has_episode && content_type != ContentType::Series {
                 self.switch_metadata_source(self.preferred_series_source, ContentType::Series);
-            } else if has_year && !has_episode && self.content_type != ContentType::Movie {
+                content_type = ContentType::Series;
+            } else if has_year && !has_episode && content_type != ContentType::Movie {
                 self.switch_metadata_source(self.preferred_movie_source, ContentType::Movie);
+                content_type = ContentType::Movie;
             }
         }
+
+        if !self.force_metadata_source {
+            self.active_metadata_source = match content_type {
+                ContentType::Movie => self.preferred_movie_source,
+                ContentType::Series => self.preferred_series_source,
+            };
+        }
+        self.refresh_active_sources(content_type);
 
         let mut query = self.detected_series_name.trim().to_string();
         if query.is_empty() {
@@ -1531,7 +1578,7 @@ environment variables.",
                 query = title;
             }
         }
-        if self.content_type == ContentType::Movie {
+        if content_type == ContentType::Movie {
             if let Some(year) = parsed_hint.as_ref().and_then(|hint| hint.year) {
                 if !query.is_empty() {
                     query = format!("{query} {year}");
@@ -1556,7 +1603,7 @@ environment variables.",
                 }) {
                     self.selected_title_id = Some(best.id.clone());
                 }
-                if self.content_type == ContentType::Series {
+                if content_type == ContentType::Series {
                     self.fetch_episodes();
                 } else {
                     self.episode_matches.clear();
@@ -1594,7 +1641,10 @@ environment variables.",
     }
 
     fn detect_search_hint(&self) -> Option<matching::ParsedName> {
-        let file = self.original_files.first()?;
+        let file = self
+            .selected_file_index
+            .and_then(|index| self.original_files.get(index))
+            .or_else(|| self.original_files.first())?;
         let parsed = matching::parse_filename(file);
         if parsed.title.is_none()
             && parsed.season.is_none()
@@ -1612,16 +1662,31 @@ environment variables.",
         ui.group(|ui| {
             ui.label(RichText::new("Fetch Inputs").size(12.0));
             ui.horizontal(|ui| {
+                let mut content_type = self.active_content_type();
                 ui.label("Type");
                 egui::ComboBox::from_id_source("content_type")
-                    .selected_text(match self.content_type {
+                    .selected_text(match content_type {
                         ContentType::Movie => "Movie",
                         ContentType::Series => "Series",
                     })
                     .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut self.content_type, ContentType::Movie, "Movie");
-                        ui.selectable_value(&mut self.content_type, ContentType::Series, "Series");
+                        ui.selectable_value(&mut content_type, ContentType::Movie, "Movie");
+                        ui.selectable_value(&mut content_type, ContentType::Series, "Series");
                     });
+                if content_type != self.active_content_type() {
+                    self.set_content_type_for_selected_or_all(content_type);
+                    if !self.force_metadata_source {
+                        self.active_metadata_source = match content_type {
+                            ContentType::Movie => self.preferred_movie_source,
+                            ContentType::Series => self.preferred_series_source,
+                        };
+                    }
+                    self.refresh_active_sources(content_type);
+                    self.fetch_status = FetchStatus::Idle;
+                    self.title_matches.clear();
+                    self.episode_matches.clear();
+                    self.selected_title_id = None;
+                }
                 ui.label("Series");
                 ui.add(
                     egui::TextEdit::singleline(&mut self.detected_series_name)
@@ -1631,7 +1696,7 @@ environment variables.",
             });
             let force_response = ui.checkbox(&mut self.force_metadata_source, "Forcer la source");
             if force_response.changed() {
-                self.refresh_active_sources();
+                self.refresh_active_sources(self.active_content_type());
                 self.fetch_status = FetchStatus::Idle;
                 self.title_matches.clear();
                 self.episode_matches.clear();
@@ -1666,7 +1731,8 @@ environment variables.",
                     .checkbox(&mut self.format_options.include_year, "Include year")
                     .changed();
             });
-            let default_template = match self.content_type {
+            let active_type = self.active_content_type();
+            let default_template = match active_type {
                 ContentType::Series => {
                     if self.format_options.include_episode_title {
                         DEFAULT_SERIES_FORMAT
@@ -1682,7 +1748,7 @@ environment variables.",
                     }
                 }
             };
-            let current_template = match self.content_type {
+            let current_template = match active_type {
                 ContentType::Series => self
                     .format_options
                     .series_template
@@ -1704,20 +1770,20 @@ environment variables.",
                 ui.label("Template");
                 template_changed = ui
                     .add(
-                    egui::TextEdit::singleline(&mut template_input)
-                        .desired_width(220.0)
-                        .hint_text("Template de renommage"),
-                )
+                        egui::TextEdit::singleline(&mut template_input)
+                            .desired_width(220.0)
+                            .hint_text("Template de renommage"),
+                    )
                     .changed();
                 preset_clicked = ui.button("Preset").clicked();
                 reset_clicked = ui.button("Reset").clicked();
             });
             if preset_clicked {
-                let preset_template = match self.content_type {
+                let preset_template = match active_type {
                     ContentType::Series => DEFAULT_SERIES_FORMAT,
                     ContentType::Movie => DEFAULT_MOVIE_FORMAT,
                 };
-                match self.content_type {
+                match active_type {
                     ContentType::Series => {
                         self.format_options.series_template = Some(preset_template.to_string());
                     }
@@ -1727,7 +1793,7 @@ environment variables.",
                 }
                 format_changed = true;
             } else if reset_clicked {
-                match self.content_type {
+                match active_type {
                     ContentType::Series => {
                         self.format_options.series_template = None;
                         self.format_options.include_episode_title = true;
@@ -1744,7 +1810,7 @@ environment variables.",
                 } else {
                     Some(template_input)
                 };
-                match self.content_type {
+                match active_type {
                     ContentType::Series => {
                         self.format_options.series_template = normalized;
                     }
@@ -1780,7 +1846,7 @@ environment variables.",
                 .size(10.0)
                 .color(palette.subtext0),
             );
-            if self.content_type == ContentType::Series {
+            if active_type == ContentType::Series {
                 if self.episode_matches.is_empty() {
                     ui.label(RichText::new("No episodes loaded yet.").color(palette.subtext0));
                 } else {
@@ -1815,9 +1881,7 @@ environment variables.",
         egui::Window::new("Ajuster le match")
             .open(&mut open)
             .show(ctx, |ui| {
-                let Some(file_index) = self
-                    .match_picker_file_index
-                    .or(self.selected_file_index)
+                let Some(file_index) = self.match_picker_file_index.or(self.selected_file_index)
                 else {
                     ui.label("Sélectionnez un fichier pour ajuster le match.");
                     return;
@@ -1826,6 +1890,9 @@ environment variables.",
                     ui.label("Fichier introuvable.");
                     return;
                 };
+                let content_type = self
+                    .content_type_for_file(&file_name)
+                    .unwrap_or_else(|| self.active_content_type());
                 ui.label(RichText::new(format!("Fichier: {file_name}")).strong());
                 ui.add_space(6.0);
 
@@ -1843,11 +1910,10 @@ environment variables.",
                             ui.add_space(4.0);
                             for title in &title_matches {
                                 let label = self.format_title_match_summary(title);
-                                let selected =
-                                    selected_title_id.as_deref() == Some(&title.id);
+                                let selected = selected_title_id.as_deref() == Some(&title.id);
                                 if ui.selectable_label(selected, label).clicked() {
                                     selected_id = Some(title.id.clone());
-                                    should_fetch = self.content_type == ContentType::Series;
+                                    should_fetch = content_type == ContentType::Series;
                                     let mut override_entry = self
                                         .manual_overrides
                                         .get(&file_name)
@@ -1867,11 +1933,10 @@ environment variables.",
                                 self.render_title_match_details(ui, title);
                             } else {
                                 ui.label(
-                                    RichText::new("Sélectionnez un match.")
-                                        .color(palette.subtext0),
+                                    RichText::new("Sélectionnez un match.").color(palette.subtext0),
                                 );
                             }
-                            if self.content_type == ContentType::Series {
+                            if content_type == ContentType::Series {
                                 ui.add_space(10.0);
                                 ui.label(RichText::new("Épisodes").strong());
                                 if self.episode_matches.is_empty() {
@@ -1880,44 +1945,38 @@ environment variables.",
                                             .color(palette.subtext0),
                                     );
                                 } else {
-                                    ScrollArea::vertical()
-                                        .max_height(160.0)
-                                        .show(ui, |ui| {
-                                            let current_override = self
-                                                .manual_override_for(&file_name)
-                                                .cloned()
-                                                .unwrap_or_default();
-                                            for episode in &episode_matches {
-                                                let label = format!(
-                                                    "S{:02}E{:02} - {}",
-                                                    episode.season, episode.episode, episode.title
-                                                );
-                                                let selected = current_override.season
-                                                    == Some(episode.season)
-                                                    && current_override.episode
-                                                        == Some(episode.episode);
-                                                if ui.selectable_label(selected, label).clicked()
-                                                {
-                                                    let mut override_entry = current_override.clone();
-                                                    override_entry.season =
-                                                        Some(episode.season);
-                                                    override_entry.episode =
-                                                        Some(episode.episode);
-                                                    if override_entry.title.is_none() {
-                                                        if let Some(title) =
-                                                            self.selected_title_match()
-                                                        {
-                                                            override_entry.title =
-                                                                Some(title.name.clone());
-                                                        }
+                                    ScrollArea::vertical().max_height(160.0).show(ui, |ui| {
+                                        let current_override = self
+                                            .manual_override_for(&file_name)
+                                            .cloned()
+                                            .unwrap_or_default();
+                                        for episode in &episode_matches {
+                                            let label = format!(
+                                                "S{:02}E{:02} - {}",
+                                                episode.season, episode.episode, episode.title
+                                            );
+                                            let selected = current_override.season
+                                                == Some(episode.season)
+                                                && current_override.episode
+                                                    == Some(episode.episode);
+                                            if ui.selectable_label(selected, label).clicked() {
+                                                let mut override_entry = current_override.clone();
+                                                override_entry.season = Some(episode.season);
+                                                override_entry.episode = Some(episode.episode);
+                                                if override_entry.title.is_none() {
+                                                    if let Some(title) = self.selected_title_match()
+                                                    {
+                                                        override_entry.title =
+                                                            Some(title.name.clone());
                                                     }
-                                                    self.set_manual_override(
-                                                        &file_name,
-                                                        override_entry,
-                                                    );
                                                 }
+                                                self.set_manual_override(
+                                                    &file_name,
+                                                    override_entry,
+                                                );
                                             }
-                                        });
+                                        }
+                                    });
                                 }
                             }
                         });
@@ -2011,6 +2070,7 @@ environment variables.",
                 name: "Chargement des résultats…".to_string(),
                 status: None,
                 original: None,
+                content_type_label: None,
                 confidence: None,
                 candidate_count: None,
                 rename_note: None,
@@ -2022,6 +2082,7 @@ environment variables.",
                     name: format!("Erreur: {message}"),
                     status: None,
                     original: None,
+                    content_type_label: None,
                     confidence: None,
                     candidate_count: None,
                     rename_note: None,
@@ -2033,6 +2094,7 @@ environment variables.",
                 name: "Aucun résultat disponible.".to_string(),
                 status: None,
                 original: None,
+                content_type_label: None,
                 confidence: None,
                 candidate_count: None,
                 rename_note: None,
@@ -2046,6 +2108,12 @@ environment variables.",
                     name: self.format_preview(result),
                     status: Some(result.status),
                     original: Some(result.original.clone()),
+                    content_type_label: self.content_type_for_result(result).map(|content_type| {
+                        match content_type {
+                            ContentType::Movie => "Movie".to_string(),
+                            ContentType::Series => "Series".to_string(),
+                        }
+                    }),
                     confidence: result
                         .metadata_confidence
                         .or_else(|| Some(result.confidence)),
@@ -2108,32 +2176,43 @@ environment variables.",
         use matching::ContentGuess;
 
         self.detection_notice = None;
-        match matching::guess_content_type(&self.match_results) {
-            ContentGuess::Series => {
-                let target_source = self.preferred_series_source;
-                if self.content_type != ContentType::Series
-                    || self.active_metadata_source != target_source
-                {
-                    self.switch_metadata_source(target_source, ContentType::Series);
+        let mut has_ambiguous = false;
+        let mut has_unknown = false;
+
+        for result in &mut self.match_results {
+            match matching::guess_content_type_for_result(result) {
+                ContentGuess::Series => result.content_type = Some(ContentType::Series),
+                ContentGuess::Movie => result.content_type = Some(ContentType::Movie),
+                ContentGuess::Ambiguous => {
+                    result.content_type = None;
+                    has_ambiguous = true;
+                }
+                ContentGuess::Unknown => {
+                    result.content_type = None;
+                    has_unknown = true;
                 }
             }
-            ContentGuess::Movie => {
-                let target_source = self.preferred_movie_source;
-                if self.content_type != ContentType::Movie
-                    || self.active_metadata_source != target_source
-                {
-                    self.switch_metadata_source(target_source, ContentType::Movie);
-                }
+        }
+
+        if has_ambiguous {
+            self.detection_notice = Some(
+                "Type ambigu détecté pour certains fichiers. Choisissez Film ou Série.".to_string(),
+            );
+        } else if has_unknown {
+            self.detection_notice =
+                Some("Type inconnu pour certains fichiers. Choisissez Film ou Série.".to_string());
+        }
+
+        if !self.match_results.is_empty() {
+            let content_type = self.active_content_type();
+            if !self.force_metadata_source {
+                let preferred = match content_type {
+                    ContentType::Movie => self.preferred_movie_source,
+                    ContentType::Series => self.preferred_series_source,
+                };
+                self.active_metadata_source = preferred;
             }
-            ContentGuess::Ambiguous => {
-                self.detection_notice = Some(
-                    "Type ambigu détecté. Choisissez Film ou Série, puis la source.".to_string(),
-                );
-            }
-            ContentGuess::Unknown => {
-                self.detection_notice =
-                    Some("Aucun indice clair sur le type. Choisissez Film ou Série.".to_string());
-            }
+            self.refresh_active_sources(content_type);
         }
     }
 
@@ -2152,6 +2231,9 @@ environment variables.",
 
     fn format_preview(&self, result: &matching::MatchResult) -> String {
         let detected = self.detected_series_name.trim();
+        let content_type = self
+            .content_type_for_result(result)
+            .unwrap_or_else(|| self.active_content_type());
         if let Some(override_entry) = self.manual_override_for(&result.original) {
             let override_title = override_entry
                 .title
@@ -2164,13 +2246,16 @@ environment variables.",
                 .map(|title| title.name.as_str())
                 .or_else(|| (!detected.is_empty()).then_some(detected))
                 .or_else(|| {
-                    result.metadata.as_ref().and_then(|metadata| match metadata {
-                        matching::MatchMetadata::Episode { series_title, .. } => {
-                            series_title.as_deref()
-                        }
-                        matching::MatchMetadata::Series { title } => title.as_deref(),
-                        _ => None,
-                    })
+                    result
+                        .metadata
+                        .as_ref()
+                        .and_then(|metadata| match metadata {
+                            matching::MatchMetadata::Episode { series_title, .. } => {
+                                series_title.as_deref()
+                            }
+                            matching::MatchMetadata::Series { title } => title.as_deref(),
+                            _ => None,
+                        })
                 });
             let title = override_title.or(title_fallback);
             let year = result
@@ -2194,14 +2279,17 @@ environment variables.",
                         series: title.unwrap_or("Unknown Series"),
                         season,
                         episode,
-                        title: result.episode_match.as_ref().map(|episode| episode.title.as_str()),
+                        title: result
+                            .episode_match
+                            .as_ref()
+                            .map(|episode| episode.title.as_str()),
                         year,
                     },
                     self.format_options.clone(),
                 );
             }
             if let Some(override_title) = override_title {
-                if self.content_type == ContentType::Movie {
+                if content_type == ContentType::Movie {
                     return formatting::format_movie_name(
                         MovieFormatInput {
                             title: override_title,
@@ -2220,12 +2308,15 @@ environment variables.",
                 .map(|title| title.name.as_str())
                 .or_else(|| (!detected.is_empty()).then_some(detected))
                 .or_else(|| {
-                    result.metadata.as_ref().and_then(|metadata| match metadata {
-                        matching::MatchMetadata::Episode { series_title, .. } => {
-                            series_title.as_deref()
-                        }
-                        _ => None,
-                    })
+                    result
+                        .metadata
+                        .as_ref()
+                        .and_then(|metadata| match metadata {
+                            matching::MatchMetadata::Episode { series_title, .. } => {
+                                series_title.as_deref()
+                            }
+                            _ => None,
+                        })
                 })
                 .unwrap_or("Unknown Series");
             return formatting::format_series_name(
@@ -2234,13 +2325,16 @@ environment variables.",
                     season: episode_match.season,
                     episode: episode_match.episode,
                     title: Some(episode_match.title.as_str()),
-                    year: result.title_match.as_ref().and_then(|title| title.year.map(u32::from)),
+                    year: result
+                        .title_match
+                        .as_ref()
+                        .and_then(|title| title.year.map(u32::from)),
                 },
                 self.format_options.clone(),
             );
         }
 
-        if self.content_type == ContentType::Movie {
+        if content_type == ContentType::Movie {
             if let Some(title_match) = &result.title_match {
                 return formatting::format_movie_name(
                     MovieFormatInput {
@@ -2255,14 +2349,9 @@ environment variables.",
         if let Some(title_match) = &result.title_match {
             let year = title_match.year.map(|year| year as u32);
             let metadata = result.metadata.as_ref();
-            let is_episode = matches!(
-                metadata,
-                Some(matching::MatchMetadata::Episode { .. })
-            );
+            let is_episode = matches!(metadata, Some(matching::MatchMetadata::Episode { .. }));
             if is_episode {
-                let (season, episode) = self
-                    .episode_hint(result)
-                    .unwrap_or((1, 1));
+                let (season, episode) = self.episode_hint(result).unwrap_or((1, 1));
                 return formatting::format_series_name(
                     SeriesFormatInput {
                         series: &title_match.name,
@@ -2307,9 +2396,7 @@ environment variables.",
                 } else {
                     detected.to_string()
                 };
-                let resolved_title = episode_title
-                    .as_deref()
-                    .or_else(|| series_title.as_deref());
+                let resolved_title = episode_title.as_deref().or_else(|| series_title.as_deref());
 
                 formatting::format_series_name(
                     SeriesFormatInput {
@@ -2904,6 +2991,7 @@ struct NewNameRow {
     name: String,
     status: Option<matching::MatchStatus>,
     original: Option<String>,
+    content_type_label: Option<String>,
     confidence: Option<f32>,
     candidate_count: Option<usize>,
     rename_note: Option<(String, Color32)>,
@@ -2935,6 +3023,14 @@ impl ListItem for NewNameRow {
                     ui.label(&self.name);
                     ui.add_space(6.0);
                     ui.label(RichText::new(label).color(color));
+                    if let Some(content_type) = &self.content_type_label {
+                        ui.add_space(6.0);
+                        ui.label(
+                            RichText::new(content_type)
+                                .color(self.muted_color)
+                                .size(10.0),
+                        );
+                    }
                 });
                 if let Some(original) = &self.original {
                     let candidate_count = self.candidate_count.unwrap_or(1);

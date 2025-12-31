@@ -1,9 +1,9 @@
 mod advanced;
 mod parsing;
 
+use crate::metadata::models::{EpisodeMatch, TitleMatch};
 pub use advanced::{NormalizedName, RankedCandidate, normalize_name, rank_candidates};
 pub use parsing::{ParsedName, parse_filename};
-use crate::metadata::models::{EpisodeMatch, TitleMatch};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MatchStatus {
@@ -18,6 +18,12 @@ pub enum ContentGuess {
     Movie,
     Ambiguous,
     Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContentType {
+    Movie,
+    Series,
 }
 
 #[derive(Debug, Clone)]
@@ -42,6 +48,7 @@ pub struct MatchResult {
     pub original: String,
     pub metadata: Option<MatchMetadata>,
     pub candidates: Vec<MatchMetadata>,
+    pub content_type: Option<ContentType>,
     pub confidence: f32,
     pub metadata_confidence: Option<f32>,
     pub metadata_candidate_count: Option<usize>,
@@ -52,6 +59,33 @@ pub struct MatchResult {
 
 pub fn match_files(files: &[String]) -> Vec<MatchResult> {
     files.iter().map(|file| match_single(file)).collect()
+}
+
+pub fn guess_content_type_for_result(result: &MatchResult) -> ContentGuess {
+    let mut series_count = 0;
+    let mut movie_count = 0;
+    let mut saw_ambiguous = false;
+
+    if result.candidates.len() > 1 {
+        saw_ambiguous = true;
+    }
+
+    for candidate in &result.candidates {
+        match candidate {
+            MatchMetadata::Series { .. } | MatchMetadata::Episode { .. } => series_count += 1,
+            MatchMetadata::Movie { .. } => movie_count += 1,
+        }
+    }
+
+    if series_count > 0 && movie_count == 0 && !saw_ambiguous {
+        ContentGuess::Series
+    } else if movie_count > 0 && series_count == 0 && !saw_ambiguous {
+        ContentGuess::Movie
+    } else if series_count > 0 || movie_count > 0 || saw_ambiguous {
+        ContentGuess::Ambiguous
+    } else {
+        ContentGuess::Unknown
+    }
 }
 
 pub fn guess_content_type(results: &[MatchResult]) -> ContentGuess {
@@ -136,6 +170,7 @@ fn match_single(filename: &str) -> MatchResult {
         original: filename.to_string(),
         metadata,
         candidates,
+        content_type: None,
         confidence,
         metadata_confidence: None,
         metadata_candidate_count: None,
