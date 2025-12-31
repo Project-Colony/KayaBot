@@ -22,6 +22,10 @@ struct TmdbTitle {
     name: Option<String>,
     #[serde(default)]
     title: Option<String>,
+    #[serde(default)]
+    original_name: Option<String>,
+    #[serde(default)]
+    original_title: Option<String>,
     release_date: Option<String>,
     first_air_date: Option<String>,
     #[serde(default)]
@@ -41,7 +45,10 @@ struct TmdbEpisode {
 #[derive(Debug, Clone, Deserialize)]
 struct TmdbMovieDetails {
     id: u32,
+    #[serde(default)]
     title: String,
+    #[serde(default)]
+    original_title: Option<String>,
     release_date: Option<String>,
 }
 
@@ -262,11 +269,21 @@ impl TmdbClient {
         let source_score = title.vote_average / 10.0;
         let source_trust = 0.9;
         let global_score = source_score * source_trust;
-        let name = title
-            .name
-            .or(title.title)
-            .unwrap_or_else(|| "Unknown title".to_string());
+        let (name, alias) = resolve_title(
+            title.name.or(title.title),
+            title.original_name.or(title.original_title),
+        );
         let date = title.release_date.or(title.first_air_date);
+        let mut extras = crate::metadata::models::MetadataExtras {
+            external_ids: crate::metadata::models::ExternalIds {
+                tmdb: Some(title.id.to_string()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        if let Some(alias) = alias {
+            extras.aliases.push(alias);
+        }
         TitleMatch {
             id: title.id.to_string(),
             name,
@@ -278,13 +295,7 @@ impl TmdbClient {
             source_trust,
             global_score,
             source: "TheMovieDB".to_string(),
-            extras: crate::metadata::models::MetadataExtras {
-                external_ids: crate::metadata::models::ExternalIds {
-                    tmdb: Some(title.id.to_string()),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
+            extras,
         }
     }
 
@@ -315,9 +326,20 @@ impl TmdbClient {
         let source_score = 1.0;
         let source_trust = 0.9;
         let global_score = source_score * source_trust;
+        let (title, alias) = resolve_title(Some(details.title), details.original_title);
+        let mut extras = crate::metadata::models::MetadataExtras {
+            external_ids: crate::metadata::models::ExternalIds {
+                tmdb: Some(details.id.to_string()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        if let Some(alias) = alias {
+            extras.aliases.push(alias);
+        }
         MovieMatch {
             id: details.id.to_string(),
-            title: details.title,
+            title,
             year: details
                 .release_date
                 .as_deref()
@@ -327,14 +349,23 @@ impl TmdbClient {
             source_trust,
             global_score,
             source: "TheMovieDB".to_string(),
-            extras: crate::metadata::models::MetadataExtras {
-                external_ids: crate::metadata::models::ExternalIds {
-                    tmdb: Some(details.id.to_string()),
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
+            extras,
         }
+    }
+}
+
+fn resolve_title(localized: Option<String>, original: Option<String>) -> (String, Option<String>) {
+    let localized = localized.filter(|value| !value.trim().is_empty());
+    let original = original.filter(|value| !value.trim().is_empty());
+    match localized {
+        Some(name) => {
+            let alias = original.filter(|value| !value.eq_ignore_ascii_case(&name));
+            (name, alias)
+        }
+        None => (
+            original.unwrap_or_else(|| "Unknown title".to_string()),
+            None,
+        ),
     }
 }
 
