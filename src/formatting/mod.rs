@@ -1,6 +1,8 @@
 use std::fs;
 use std::path::PathBuf;
 
+use crate::paths;
+
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(default)]
 pub struct FormatOptions {
@@ -49,8 +51,7 @@ impl FormatOptions {
     }
 
     fn config_path() -> Option<PathBuf> {
-        dirs::config_dir()
-            .map(|base| base.join("Colony").join("KayaBot").join("format_options.toml"))
+        paths::app_config_dir().map(|base| base.join("format_options.toml"))
     }
 }
 
