@@ -3372,3 +3372,270 @@ fn main() -> eframe::Result<()> {
         Box::new(|_cc| Box::new(RenameApp::default())),
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use crate::metadata::error::MetadataError;
+    use crate::metadata::models::{EpisodeMatch, MetadataExtras, MovieMatch, TitleMatch};
+    use crate::metadata::provider::MetadataProvider;
+
+    struct MockProvider {
+        title_match: TitleMatch,
+        episodes: Vec<EpisodeMatch>,
+    }
+
+    impl MockProvider {
+        fn new(title: &str) -> Self {
+            Self {
+                title_match: TitleMatch {
+                    id: "mock-series".to_string(),
+                    name: title.to_string(),
+                    year: Some(2022),
+                    source_score: 0.95,
+                    source_trust: 0.9,
+                    global_score: 0.0,
+                    source: MetadataSource::TheMovieDb.label().to_string(),
+                    extras: MetadataExtras::default(),
+                },
+                episodes: vec![
+                    EpisodeMatch {
+                        id: "e1".to_string(),
+                        season: 1,
+                        episode: 1,
+                        title: "Pilot".to_string(),
+                        source_score: 0.9,
+                        source_trust: 0.9,
+                        global_score: 0.0,
+                        source: MetadataSource::TheMovieDb.label().to_string(),
+                        extras: MetadataExtras::default(),
+                    },
+                    EpisodeMatch {
+                        id: "e2".to_string(),
+                        season: 1,
+                        episode: 2,
+                        title: "Second".to_string(),
+                        source_score: 0.9,
+                        source_trust: 0.9,
+                        global_score: 0.0,
+                        source: MetadataSource::TheMovieDb.label().to_string(),
+                        extras: MetadataExtras::default(),
+                    },
+                ],
+            }
+        }
+    }
+
+    impl MetadataProvider for MockProvider {
+        fn search_title(&mut self, _query: &str) -> Result<Vec<TitleMatch>, MetadataError> {
+            Ok(vec![self.title_match.clone()])
+        }
+
+        fn fetch_episode_list(
+            &mut self,
+            _title_id: &str,
+        ) -> Result<Vec<EpisodeMatch>, MetadataError> {
+            Ok(self.episodes.clone())
+        }
+
+        fn fetch_movie_details(&mut self, _title_id: &str) -> Result<MovieMatch, MetadataError> {
+            Ok(MovieMatch {
+                id: "mock-movie".to_string(),
+                title: "Mock Movie".to_string(),
+                year: Some(2024),
+                source_score: 0.9,
+                source_trust: 0.9,
+                global_score: 0.0,
+                source: MetadataSource::TheMovieDb.label().to_string(),
+                extras: MetadataExtras::default(),
+            })
+        }
+    }
+
+    fn fixture_dir() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/media_samples")
+    }
+
+    fn temp_dir(prefix: &str) -> PathBuf {
+        let mut dir = std::env::temp_dir();
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time should be valid")
+            .as_nanos();
+        dir.push(format!("kayabot-{prefix}-{nanos}"));
+        fs::create_dir_all(&dir).expect("temp dir should exist");
+        dir
+    }
+
+    fn copy_fixture(name: &str, dir: &Path) -> PathBuf {
+        let source = fixture_dir().join(name);
+        let target = dir.join(name);
+        fs::copy(&source, &target).expect("fixture copy should succeed");
+        target
+    }
+
+    #[test]
+    fn match_results_are_correct_for_fixture_names() {
+        let files = vec![
+            "The Office US - S02E03 - Office Olympics.mkv".to_string(),
+            "Arcane_S02E01_Part1.mkv".to_string(),
+            "Amelie.2001.FRENCH.1080p.BluRay.mkv".to_string(),
+            "Spirited.Away.2001.avi".to_string(),
+        ];
+
+        let results = matching::match_files(&files);
+        assert_eq!(results.len(), files.len());
+        assert!(results[0]
+            .candidates
+            .iter()
+            .any(|candidate| matches!(candidate, matching::MatchMetadata::Episode { .. })));
+        assert_ne!(results[0].status, matching::MatchStatus::Error);
+        assert!(results[1]
+            .candidates
+            .iter()
+            .any(|candidate| matches!(candidate, matching::MatchMetadata::Episode { .. })));
+        assert_ne!(results[1].status, matching::MatchStatus::Error);
+        assert!(results[2]
+            .candidates
+            .iter()
+            .any(|candidate| matches!(candidate, matching::MatchMetadata::Movie { .. })));
+        assert_ne!(results[2].status, matching::MatchStatus::Error);
+        assert!(results[3]
+            .candidates
+            .iter()
+            .any(|candidate| matches!(candidate, matching::MatchMetadata::Movie { .. })));
+        assert_ne!(results[3].status, matching::MatchStatus::Error);
+    }
+
+    #[test]
+    fn fetch_metadata_populates_title_and_episode_matches() {
+        let temp = temp_dir("fetch");
+        let file_path =
+            copy_fixture("Lupin.S01E05.720p.WEBRip.mp4", &temp);
+
+        let mut app = RenameApp::default();
+        app.original_files = vec![file_path.display().to_string()];
+        app.match_results = matching::match_files(&app.original_files);
+        app.apply_content_detection();
+        app.selected_file_index = Some(0);
+        app.metadata_provider = MetadataPipeline::new(vec![(
+            MetadataSource::TheMovieDb,
+            Box::new(MockProvider::new("Lupin")),
+        )]);
+        app.preferred_series_source = MetadataSource::TheMovieDb;
+        app.preferred_movie_source = MetadataSource::TheMovieDb;
+
+        app.fetch_metadata();
+
+        assert!(matches!(app.fetch_status, FetchStatus::Ready));
+        assert_eq!(app.title_matches.len(), 1);
+        assert_eq!(app.episode_matches.len(), 2);
+        assert!(app.selected_title_id.is_some());
+
+        fs::remove_dir_all(&temp).expect("temp dir cleanup");
+    }
+
+    #[test]
+    fn rename_single_file_supports_dry_run() {
+        let temp = temp_dir("dry-run");
+        let file_path =
+            copy_fixture("The Office US - S02E03 - Office Olympics.mkv", &temp);
+
+        let mut app = RenameApp::default();
+        app.rename_dry_run = true;
+        app.original_files = vec![file_path.display().to_string()];
+        app.match_results = matching::match_files(&app.original_files);
+        app.apply_content_detection();
+
+        let mut used_targets = HashSet::new();
+        let mut updated_files = app.original_files.clone();
+        let result = &app.match_results[0];
+        let summary = app.rename_single_file(
+            0,
+            &app.original_files[0],
+            result,
+            &mut used_targets,
+            &mut updated_files,
+        );
+
+        assert!(matches!(summary.outcome, RenameOutcome::DryRun));
+        assert!(Path::new(&summary.original).exists());
+        if summary.resolved != summary.original {
+            assert!(!Path::new(&summary.resolved).exists());
+        }
+
+        fs::remove_dir_all(&temp).expect("temp dir cleanup");
+    }
+
+    #[test]
+    fn rename_single_file_renames_files() {
+        let temp = temp_dir("rename");
+        let file_path = copy_fixture("Arcane_S02E01_1080p.mkv", &temp);
+
+        let mut app = RenameApp::default();
+        app.rename_dry_run = false;
+        app.original_files = vec![file_path.display().to_string()];
+        app.match_results = matching::match_files(&app.original_files);
+        app.apply_content_detection();
+
+        let mut used_targets = HashSet::new();
+        let mut updated_files = app.original_files.clone();
+        let result = &app.match_results[0];
+        let summary = app.rename_single_file(
+            0,
+            &app.original_files[0],
+            result,
+            &mut used_targets,
+            &mut updated_files,
+        );
+
+        assert!(matches!(summary.outcome, RenameOutcome::Renamed));
+        assert!(!Path::new(&summary.original).exists());
+        assert!(Path::new(&summary.resolved).exists());
+
+        fs::remove_dir_all(&temp).expect("temp dir cleanup");
+    }
+
+    #[test]
+    fn rename_summary_exports_csv_and_json() {
+        let temp = temp_dir("export");
+        let csv_path = temp.join("rename-summary.csv");
+        let json_path = temp.join("rename-summary.json");
+
+        let mut app = RenameApp::default();
+        let summary = app.build_rename_summary(
+            "original.mkv",
+            "Preview Name".to_string(),
+            "Final Name.mkv".to_string(),
+            false,
+            RenameOutcome::Renamed,
+        );
+        let skipped = app.build_rename_summary(
+            "missing.mkv",
+            "Preview Missing".to_string(),
+            "missing.mkv".to_string(),
+            false,
+            RenameOutcome::Skipped("Aucun nom proposé.".to_string()),
+        );
+        app.rename_summaries = vec![summary, skipped];
+
+        app.write_rename_summary_csv(&csv_path)
+            .expect("csv export");
+        app.write_rename_summary_json(&json_path)
+            .expect("json export");
+
+        let csv_output = fs::read_to_string(&csv_path).expect("read csv");
+        assert!(csv_output.starts_with("status,message,final_path\n"));
+        assert!(csv_output.contains("Final Name.mkv"));
+
+        let json_output = fs::read_to_string(&json_path).expect("read json");
+        let rows: Vec<serde_json::Value> =
+            serde_json::from_str(&json_output).expect("parse json");
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0]["status"], "ok");
+
+        fs::remove_dir_all(&temp).expect("temp dir cleanup");
+    }
+}
