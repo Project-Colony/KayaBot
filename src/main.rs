@@ -3,7 +3,7 @@ mod matching;
 mod metadata;
 
 use eframe::egui::{
-    self, Button, Color32, FontId, Frame, Layout, RichText, ScrollArea, Stroke, Vec2,
+    self, Button, Color32, FontId, Frame, Layout, RichText, ScrollArea, Stroke, TextEdit, Vec2,
 };
 use formatting::{
     DEFAULT_MOVIE_FORMAT, DEFAULT_SERIES_FORMAT, FormatOptions, MovieFormatInput, SeriesFormatInput,
