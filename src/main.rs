@@ -20,8 +20,7 @@ use metadata::providers::{
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
-    env, fs,
-    io,
+    env, fs, io,
     path::{Path, PathBuf},
 };
 
@@ -38,6 +37,7 @@ enum LeftNav {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SettingsSection {
     Program,
+    Connections,
     Language,
     Appearance,
     Experience,
@@ -171,6 +171,9 @@ struct RenameApp {
     api_config: ApiConfig,
     config_load_status: ConfigLoadStatus,
     config_feedback_message: Option<String>,
+    api_keys_form: ApiKeysForm,
+    api_keys_load_status: ApiKeysLoadStatus,
+    api_keys_feedback_message: Option<UiFeedbackMessage>,
     active_settings_section: SettingsSection,
     user_preferences: UserPreferences,
     system_visuals: Option<egui::Visuals>,
@@ -198,7 +201,9 @@ impl Default for RenameApp {
             RenameUiState::Success(match_results.len())
         };
         let user_preferences = UserPreferences::load().unwrap_or_default();
-        let (api_config, config_load_status) = ApiConfig::from_env();
+        let (api_config, config_load_status, api_keys_load_status, api_keys_file) =
+            ApiConfig::from_env();
+        let api_keys_form = ApiKeysForm::from_file(api_keys_file);
         let mut metadata_provider =
             Self::build_metadata_pipeline(&api_config, user_preferences.metadata_locale());
         metadata_provider.set_active_sources(vec![
@@ -234,6 +239,9 @@ impl Default for RenameApp {
             api_config,
             config_load_status,
             config_feedback_message: None,
+            api_keys_form,
+            api_keys_load_status,
+            api_keys_feedback_message: None,
             active_settings_section: SettingsSection::Program,
             user_preferences,
             system_visuals: None,
@@ -734,10 +742,8 @@ impl RenameApp {
                                     RenameResultStatus::Error => palette.danger,
                                 };
                                 columns[0].label(
-                                    RichText::new(Self::rename_status_label(
-                                        summary.result_status,
-                                    ))
-                                    .color(status_color),
+                                    RichText::new(Self::rename_status_label(summary.result_status))
+                                        .color(status_color),
                                 );
                                 columns[1].label(&summary.message);
                                 columns[2].label(&summary.resolved);
@@ -780,6 +786,7 @@ impl RenameApp {
                 ui.label(RichText::new("Menu").strong());
                 ui.add_space(6.0);
                 self.settings_section_button(ui, SettingsSection::Program, "🧰", "Program");
+                self.settings_section_button(ui, SettingsSection::Connections, "🔌", "Connexions");
                 self.settings_section_button(ui, SettingsSection::Language, "🌍", "Language");
                 self.settings_section_button(ui, SettingsSection::Appearance, "🎨", "Appearance");
                 self.settings_section_button(ui, SettingsSection::Experience, "✨", "Experience");
@@ -800,6 +807,7 @@ impl RenameApp {
                         .show(ui, |ui| {
                             let settings_changed = match self.active_settings_section {
                                 SettingsSection::Program => self.settings_program(ui),
+                                SettingsSection::Connections => self.settings_connections(ui),
                                 SettingsSection::Language => self.settings_language(ui),
                                 SettingsSection::Appearance => self.settings_appearance(ui),
                                 SettingsSection::Experience => self.settings_experience(ui),
@@ -844,7 +852,6 @@ impl RenameApp {
     }
 
     fn settings_program(&mut self, ui: &mut egui::Ui) -> bool {
-        let palette = self.theme_palette();
         let mut changed = false;
         ui.label(RichText::new("Program").font(FontId::proportional(18.0)));
         ui.add_space(6.0);
@@ -872,49 +879,145 @@ impl RenameApp {
                 "Ask for confirmation before renaming",
             )
             .changed();
-        ui.add_space(12.0);
-        ui.label(RichText::new("API configuration").strong());
+        changed
+    }
+
+    fn settings_connections(&mut self, ui: &mut egui::Ui) -> bool {
+        let palette = self.theme_palette();
+        ui.label(RichText::new("Connexions").font(FontId::proportional(18.0)));
+        ui.add_space(6.0);
         ui.label(
             RichText::new(
-                "Keys are loaded from config.toml in the KayaBot config directory or \
-environment variables.",
+                "API keys are loaded in this order: environment variables, \
+api_keys.toml, then config.toml.",
             )
             .size(11.0)
             .color(palette.subtext0),
         );
-        ui.label(
-            RichText::new(
-                "Supported config keys: tmdb_bearer_token or tmdb_api_key, \
-tvdb_api_key, omdb_api_key, anidb_password or anidb_api_key, tvmaze_user_agent \
-or tvmaze_api_key.",
-            )
-            .size(11.0)
-            .color(palette.subtext0),
-        );
-        if let Some(path) = ApiConfig::config_path() {
+        if let Some(path) = ApiKeysFile::path() {
             ui.label(
-                RichText::new(format!("Config path: {}", path.display()))
+                RichText::new(format!("api_keys.toml: {}", path.display()))
                     .size(11.0)
                     .color(palette.subtext0),
             );
         }
+        if let Some(path) = ApiConfig::config_path() {
+            ui.label(
+                RichText::new(format!("config.toml: {}", path.display()))
+                    .size(11.0)
+                    .color(palette.subtext0),
+            );
+        }
+        if let Some(message) = self.api_keys_load_status.message() {
+            ui.label(RichText::new(message).size(11.0).color(palette.danger));
+        }
         if let Some(message) = self.config_load_status.message() {
             ui.label(RichText::new(message).size(11.0).color(palette.danger));
         }
-        ui.add_space(6.0);
+        ui.add_space(10.0);
+
+        egui::Grid::new("connections_keys_grid")
+            .num_columns(2)
+            .spacing(Vec2::new(12.0, 6.0))
+            .show(ui, |ui| {
+                ui.label("TMDB Bearer Token");
+                ui.add(
+                    TextEdit::singleline(&mut self.api_keys_form.tmdb_bearer_token)
+                        .password(true)
+                        .desired_width(240.0),
+                );
+                ui.end_row();
+
+                ui.label("TMDB API Key");
+                ui.add(
+                    TextEdit::singleline(&mut self.api_keys_form.tmdb_api_key)
+                        .password(true)
+                        .desired_width(240.0),
+                );
+                ui.end_row();
+
+                ui.label("TVDB API Key");
+                ui.add(
+                    TextEdit::singleline(&mut self.api_keys_form.tvdb_api_key)
+                        .password(true)
+                        .desired_width(240.0),
+                );
+                ui.end_row();
+
+                ui.label("OMDB API Key");
+                ui.add(
+                    TextEdit::singleline(&mut self.api_keys_form.omdb_api_key)
+                        .password(true)
+                        .desired_width(240.0),
+                );
+                ui.end_row();
+
+                ui.label("AniDB API Key");
+                ui.add(
+                    TextEdit::singleline(&mut self.api_keys_form.anidb_api_key)
+                        .password(true)
+                        .desired_width(240.0),
+                );
+                ui.end_row();
+
+                ui.label("AniDB Username");
+                ui.add(
+                    TextEdit::singleline(&mut self.api_keys_form.anidb_username)
+                        .desired_width(240.0),
+                );
+                ui.end_row();
+
+                ui.label("TVMaze User Agent");
+                ui.add(
+                    TextEdit::singleline(&mut self.api_keys_form.tvmaze_user_agent)
+                        .desired_width(240.0),
+                );
+                ui.end_row();
+            });
+
+        ui.add_space(8.0);
         ui.horizontal(|ui| {
-            if ui.button("Reload config").clicked() {
+            if ui.button("Enregistrer").clicked() {
+                let api_keys = self.api_keys_form.to_file();
+                match api_keys.save() {
+                    Ok(path) => {
+                        self.api_keys_feedback_message = Some(UiFeedbackMessage::success(format!(
+                            "Clés enregistrées dans {}",
+                            path.display()
+                        )));
+                        self.reload_api_config();
+                    }
+                    Err(err) => {
+                        self.api_keys_feedback_message = Some(UiFeedbackMessage::error(format!(
+                            "Échec de l'enregistrement: {err}"
+                        )));
+                    }
+                }
+            }
+            if ui.button("Recharger").clicked() {
+                let (api_keys, status) = ApiKeysFile::load();
+                self.api_keys_form = ApiKeysForm::from_file(api_keys);
+                self.api_keys_load_status = status;
                 self.reload_api_config();
-                self.config_feedback_message = Some("Config reloaded.".to_string());
+                self.api_keys_feedback_message =
+                    Some(UiFeedbackMessage::success("Clés rechargées.".to_string()));
             }
             if ui.button("Open config folder").clicked() {
                 self.open_config_folder();
             }
         });
-        if let Some(message) = &self.config_feedback_message {
+        if let Some(message) = &self.api_keys_feedback_message {
+            let color = if message.is_error {
+                palette.danger
+            } else {
+                palette.subtext0
+            };
+            ui.label(RichText::new(&message.text).size(11.0).color(color));
+        } else if let Some(message) = &self.config_feedback_message {
             ui.label(RichText::new(message).size(11.0).color(palette.subtext0));
         }
-        ui.add_space(6.0);
+
+        ui.add_space(10.0);
         self.settings_status_row(
             ui,
             "TMDB",
@@ -937,15 +1040,16 @@ or tvmaze_api_key.",
             ui,
             "AniDB",
             self.api_config.anidb_configured(),
-            "anidb_password or anidb_api_key",
+            "anidb_api_key",
         );
         self.settings_status_row(
             ui,
             "TVMaze",
             self.api_config.tvmaze_configured(),
-            "tvmaze_user_agent or tvmaze_api_key",
+            "tvmaze_user_agent",
         );
-        changed
+
+        false
     }
 
     fn settings_language(&mut self, ui: &mut egui::Ui) -> bool {
@@ -1160,9 +1264,10 @@ or tvmaze_api_key.",
     }
 
     fn reload_api_config(&mut self) {
-        let (api_config, config_load_status) = ApiConfig::from_env();
+        let (api_config, config_load_status, api_keys_load_status, _) = ApiConfig::from_env();
         self.api_config = api_config;
         self.config_load_status = config_load_status;
+        self.api_keys_load_status = api_keys_load_status;
         self.rebuild_metadata_provider();
     }
 
@@ -1190,8 +1295,7 @@ or tvmaze_api_key.",
                     Some(format!("Opened config folder: {}", path.display()));
             }
             Err(err) => {
-                self.config_feedback_message =
-                    Some(format!("Failed to open config folder: {err}"));
+                self.config_feedback_message = Some(format!("Failed to open config folder: {err}"));
             }
         }
     }
@@ -1741,8 +1845,7 @@ or tvmaze_api_key.",
                     Some(format!("Résumé CSV exporté vers {}.", path.display()));
             }
             Err(err) => {
-                self.rename_feedback_message =
-                    Some(format!("Erreur export CSV: {err}"));
+                self.rename_feedback_message = Some(format!("Erreur export CSV: {err}"));
             }
         }
     }
@@ -1764,8 +1867,7 @@ or tvmaze_api_key.",
                     Some(format!("Résumé JSON exporté vers {}.", path.display()));
             }
             Err(err) => {
-                self.rename_feedback_message =
-                    Some(format!("Erreur export JSON: {err}"));
+                self.rename_feedback_message = Some(format!("Erreur export JSON: {err}"));
             }
         }
     }
@@ -2931,10 +3033,22 @@ struct ApiConfig {
 }
 
 impl ApiConfig {
-    fn from_env() -> (Self, ConfigLoadStatus) {
+    fn from_env() -> (
+        Self,
+        ConfigLoadStatus,
+        ApiKeysLoadStatus,
+        Option<ApiKeysFile>,
+    ) {
+        let (api_keys, api_keys_status) = ApiKeysFile::load();
         let (config, load_status) = ConfigFile::load();
         let tmdb_token = Self::env_value("KAYABOT_TMDB_BEARER_TOKEN")
             .or_else(|| Self::env_value("KAYABOT_TMDB_API_KEY"))
+            .or_else(|| {
+                api_keys
+                    .as_ref()
+                    .and_then(|keys| keys.tmdb_bearer_token.clone())
+            })
+            .or_else(|| api_keys.as_ref().and_then(|keys| keys.tmdb_api_key.clone()))
             .or_else(|| {
                 config
                     .as_ref()
@@ -2943,18 +3057,30 @@ impl ApiConfig {
             .or_else(|| config.as_ref().and_then(|cfg| cfg.tmdb_api_key.clone()))
             .unwrap_or_default();
         let tvdb_api_key = Self::env_value("KAYABOT_TVDB_API_KEY")
+            .or_else(|| api_keys.as_ref().and_then(|keys| keys.tvdb_api_key.clone()))
             .or_else(|| config.as_ref().and_then(|cfg| cfg.tvdb_api_key.clone()))
             .unwrap_or_default();
         let omdb_api_key = Self::env_value("KAYABOT_OMDB_API_KEY")
+            .or_else(|| api_keys.as_ref().and_then(|keys| keys.omdb_api_key.clone()))
             .or_else(|| config.as_ref().and_then(|cfg| cfg.omdb_api_key.clone()))
             .unwrap_or_default();
         let anidb_api_key = Self::env_value("KAYABOT_ANIDB_PASSWORD")
             .or_else(|| Self::env_value("KAYABOT_ANIDB_API_KEY"))
+            .or_else(|| {
+                api_keys
+                    .as_ref()
+                    .and_then(|keys| keys.anidb_api_key.clone())
+            })
             .or_else(|| config.as_ref().and_then(|cfg| cfg.anidb_password.clone()))
             .or_else(|| config.as_ref().and_then(|cfg| cfg.anidb_api_key.clone()))
             .unwrap_or_default();
         let tvmaze_user_agent = Self::env_value("KAYABOT_TVMAZE_USER_AGENT")
             .or_else(|| Self::env_value("KAYABOT_TVMAZE_API_KEY"))
+            .or_else(|| {
+                api_keys
+                    .as_ref()
+                    .and_then(|keys| keys.tvmaze_user_agent.clone())
+            })
             .or_else(|| {
                 config
                     .as_ref()
@@ -2971,7 +3097,7 @@ impl ApiConfig {
             tvmaze_user_agent,
         };
 
-        (config, load_status)
+        (config, load_status, api_keys_status, api_keys)
     }
 
     fn env_value(key: &str) -> Option<String> {
@@ -3047,14 +3173,67 @@ impl ConfigLoadStatus {
     fn message(&self) -> Option<String> {
         match self.state {
             ConfigLoadState::Loaded => None,
-            ConfigLoadState::Missing => Some(format!(
-                "config.toml introuvable{}",
-                self.path_suffix()
-            )),
-            ConfigLoadState::Unreadable => Some(format!(
-                "config.toml illisible{}",
-                self.path_suffix()
-            )),
+            ConfigLoadState::Missing => {
+                Some(format!("config.toml introuvable{}", self.path_suffix()))
+            }
+            ConfigLoadState::Unreadable => {
+                Some(format!("config.toml illisible{}", self.path_suffix()))
+            }
+        }
+    }
+
+    fn path_suffix(&self) -> String {
+        self.path
+            .as_ref()
+            .map(|path| format!(", utilisé: {}", path.display()))
+            .unwrap_or_default()
+    }
+}
+
+#[derive(Debug, Clone)]
+enum ApiKeysLoadState {
+    Loaded,
+    Missing,
+    Unreadable,
+}
+
+#[derive(Debug, Clone)]
+struct ApiKeysLoadStatus {
+    path: Option<PathBuf>,
+    state: ApiKeysLoadState,
+}
+
+impl ApiKeysLoadStatus {
+    fn loaded(path: Option<PathBuf>) -> Self {
+        Self {
+            path,
+            state: ApiKeysLoadState::Loaded,
+        }
+    }
+
+    fn missing(path: Option<PathBuf>) -> Self {
+        Self {
+            path,
+            state: ApiKeysLoadState::Missing,
+        }
+    }
+
+    fn unreadable(path: Option<PathBuf>) -> Self {
+        Self {
+            path,
+            state: ApiKeysLoadState::Unreadable,
+        }
+    }
+
+    fn message(&self) -> Option<String> {
+        match self.state {
+            ApiKeysLoadState::Loaded => None,
+            ApiKeysLoadState::Missing => {
+                Some(format!("api_keys.toml introuvable{}", self.path_suffix()))
+            }
+            ApiKeysLoadState::Unreadable => {
+                Some(format!("api_keys.toml illisible{}", self.path_suffix()))
+            }
         }
     }
 
@@ -3096,6 +3275,132 @@ impl ConfigFile {
                     (None, ConfigLoadStatus::unreadable(Some(path)))
                 }
             }
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Default)]
+struct ApiKeysFile {
+    tmdb_bearer_token: Option<String>,
+    tmdb_api_key: Option<String>,
+    tvdb_api_key: Option<String>,
+    omdb_api_key: Option<String>,
+    anidb_api_key: Option<String>,
+    anidb_username: Option<String>,
+    tvmaze_user_agent: Option<String>,
+}
+
+impl ApiKeysFile {
+    fn load() -> (Option<Self>, ApiKeysLoadStatus) {
+        let path = ApiKeysFile::path();
+        let Some(path) = path else {
+            return (None, ApiKeysLoadStatus::missing(None));
+        };
+        match fs::read_to_string(&path) {
+            Ok(contents) => match toml::from_str(&contents) {
+                Ok(config) => (Some(config), ApiKeysLoadStatus::loaded(Some(path))),
+                Err(_) => (None, ApiKeysLoadStatus::unreadable(Some(path))),
+            },
+            Err(err) => {
+                if err.kind() == io::ErrorKind::NotFound {
+                    (None, ApiKeysLoadStatus::missing(Some(path)))
+                } else {
+                    (None, ApiKeysLoadStatus::unreadable(Some(path)))
+                }
+            }
+        }
+    }
+
+    fn save(&self) -> io::Result<PathBuf> {
+        let Some(path) = ApiKeysFile::path() else {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "No config directory available",
+            ));
+        };
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let payload = toml::to_string_pretty(self).map_err(|err| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("TOML encode error: {err}"),
+            )
+        })?;
+        fs::write(&path, payload)?;
+        Ok(path)
+    }
+
+    fn path() -> Option<PathBuf> {
+        config_root().map(|root| root.join("api_keys.toml"))
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ApiKeysForm {
+    tmdb_bearer_token: String,
+    tmdb_api_key: String,
+    tvdb_api_key: String,
+    omdb_api_key: String,
+    anidb_api_key: String,
+    anidb_username: String,
+    tvmaze_user_agent: String,
+}
+
+impl ApiKeysForm {
+    fn from_file(api_keys: Option<ApiKeysFile>) -> Self {
+        let api_keys = api_keys.unwrap_or_default();
+        Self {
+            tmdb_bearer_token: api_keys.tmdb_bearer_token.unwrap_or_default(),
+            tmdb_api_key: api_keys.tmdb_api_key.unwrap_or_default(),
+            tvdb_api_key: api_keys.tvdb_api_key.unwrap_or_default(),
+            omdb_api_key: api_keys.omdb_api_key.unwrap_or_default(),
+            anidb_api_key: api_keys.anidb_api_key.unwrap_or_default(),
+            anidb_username: api_keys.anidb_username.unwrap_or_default(),
+            tvmaze_user_agent: api_keys.tvmaze_user_agent.unwrap_or_default(),
+        }
+    }
+
+    fn to_file(&self) -> ApiKeysFile {
+        ApiKeysFile {
+            tmdb_bearer_token: Self::to_option(&self.tmdb_bearer_token),
+            tmdb_api_key: Self::to_option(&self.tmdb_api_key),
+            tvdb_api_key: Self::to_option(&self.tvdb_api_key),
+            omdb_api_key: Self::to_option(&self.omdb_api_key),
+            anidb_api_key: Self::to_option(&self.anidb_api_key),
+            anidb_username: Self::to_option(&self.anidb_username),
+            tvmaze_user_agent: Self::to_option(&self.tvmaze_user_agent),
+        }
+    }
+
+    fn to_option(value: &str) -> Option<String> {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct UiFeedbackMessage {
+    text: String,
+    is_error: bool,
+}
+
+impl UiFeedbackMessage {
+    fn success(text: String) -> Self {
+        Self {
+            text,
+            is_error: false,
+        }
+    }
+
+    fn error(text: String) -> Self {
+        Self {
+            text,
+            is_error: true,
         }
     }
 }
@@ -3701,33 +4006,40 @@ mod tests {
 
         let results = matching::match_files(&files);
         assert_eq!(results.len(), files.len());
-        assert!(results[0]
-            .candidates
-            .iter()
-            .any(|candidate| matches!(candidate, matching::MatchMetadata::Episode { .. })));
+        assert!(
+            results[0]
+                .candidates
+                .iter()
+                .any(|candidate| matches!(candidate, matching::MatchMetadata::Episode { .. }))
+        );
         assert_ne!(results[0].status, matching::MatchStatus::Error);
-        assert!(results[1]
-            .candidates
-            .iter()
-            .any(|candidate| matches!(candidate, matching::MatchMetadata::Episode { .. })));
+        assert!(
+            results[1]
+                .candidates
+                .iter()
+                .any(|candidate| matches!(candidate, matching::MatchMetadata::Episode { .. }))
+        );
         assert_ne!(results[1].status, matching::MatchStatus::Error);
-        assert!(results[2]
-            .candidates
-            .iter()
-            .any(|candidate| matches!(candidate, matching::MatchMetadata::Movie { .. })));
+        assert!(
+            results[2]
+                .candidates
+                .iter()
+                .any(|candidate| matches!(candidate, matching::MatchMetadata::Movie { .. }))
+        );
         assert_ne!(results[2].status, matching::MatchStatus::Error);
-        assert!(results[3]
-            .candidates
-            .iter()
-            .any(|candidate| matches!(candidate, matching::MatchMetadata::Movie { .. })));
+        assert!(
+            results[3]
+                .candidates
+                .iter()
+                .any(|candidate| matches!(candidate, matching::MatchMetadata::Movie { .. }))
+        );
         assert_ne!(results[3].status, matching::MatchStatus::Error);
     }
 
     #[test]
     fn fetch_metadata_populates_title_and_episode_matches() {
         let temp = temp_dir("fetch");
-        let file_path =
-            copy_fixture("Lupin.S01E05.720p.WEBRip.mp4", &temp);
+        let file_path = copy_fixture("Lupin.S01E05.720p.WEBRip.mp4", &temp);
 
         let mut app = RenameApp::default();
         app.original_files = vec![file_path.display().to_string()];
@@ -3754,8 +4066,7 @@ mod tests {
     #[test]
     fn rename_single_file_supports_dry_run() {
         let temp = temp_dir("dry-run");
-        let file_path =
-            copy_fixture("The Office US - S02E03 - Office Olympics.mkv", &temp);
+        let file_path = copy_fixture("The Office US - S02E03 - Office Olympics.mkv", &temp);
 
         let mut app = RenameApp::default();
         app.rename_dry_run = true;
@@ -3835,8 +4146,7 @@ mod tests {
         );
         app.rename_summaries = vec![summary, skipped];
 
-        app.write_rename_summary_csv(&csv_path)
-            .expect("csv export");
+        app.write_rename_summary_csv(&csv_path).expect("csv export");
         app.write_rename_summary_json(&json_path)
             .expect("json export");
 
@@ -3845,8 +4155,7 @@ mod tests {
         assert!(csv_output.contains("Final Name.mkv"));
 
         let json_output = fs::read_to_string(&json_path).expect("read json");
-        let rows: Vec<serde_json::Value> =
-            serde_json::from_str(&json_output).expect("parse json");
+        let rows: Vec<serde_json::Value> = serde_json::from_str(&json_output).expect("parse json");
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0]["status"], "ok");
 
