@@ -2,5 +2,9 @@
   "id": "tvdb-99",
   "name": "Example Series",
   "year": 2010,
-  "score": 0.88
+  "score": 0.88,
+  "translations": {
+    "fra": "Série Exemple",
+    "eng": "Example Series"
+  }
 }

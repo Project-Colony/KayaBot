@@ -459,4 +459,36 @@ mod tests {
         assert_eq!(normalized.source, "TheMovieDB");
         assert_eq!(normalized.extras.external_ids.tmdb.as_deref(), Some("550"));
     }
+
+    #[test]
+    fn normalize_title_uses_localized_name_with_alias() {
+        let payload = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/tmdb_search_localized.json"
+        ));
+        let title: TmdbTitle = serde_json::from_str(payload).expect("fixture should parse");
+        let client = TmdbClient::new("test-key", None);
+        let normalized = client.normalize_title(title);
+
+        assert_eq!(normalized.id, "551");
+        assert_eq!(normalized.name, "Le Club de la bagarre");
+        assert_eq!(normalized.year, Some(1999));
+        assert_eq!(normalized.extras.aliases, vec!["Fight Club".to_string()]);
+    }
+
+    #[test]
+    fn normalize_title_falls_back_to_original_when_missing_translation() {
+        let payload = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/tmdb_search_missing_translation.json"
+        ));
+        let title: TmdbTitle = serde_json::from_str(payload).expect("fixture should parse");
+        let client = TmdbClient::new("test-key", None);
+        let normalized = client.normalize_title(title);
+
+        assert_eq!(normalized.id, "552");
+        assert_eq!(normalized.name, "Spirited Away");
+        assert_eq!(normalized.year, Some(2001));
+        assert!(normalized.extras.aliases.is_empty());
+    }
 }
