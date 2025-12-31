@@ -127,9 +127,10 @@ impl OmdbClient {
             ("apikey", &self.api_key),
         ])?;
         if response.response.to_lowercase() == "false" {
-            return Err(MetadataError::NotFound(
-                response.error.unwrap_or_else(|| "OMDb returned no matches.".to_string()),
-            ));
+            let message = response
+                .error
+                .unwrap_or_else(|| "OMDb returned no matches.".to_string());
+            return Err(map_omdb_error(&message));
         }
         if response.search.is_empty() {
             return Err(MetadataError::NotFound(
@@ -155,9 +156,10 @@ impl OmdbClient {
             ("plot", "short"),
         ])?;
         if response.response.to_lowercase() == "false" {
-            return Err(MetadataError::NotFound(
-                response.error.unwrap_or_else(|| "OMDb returned no movie details.".to_string()),
-            ));
+            let message = response
+                .error
+                .unwrap_or_else(|| "OMDb returned no movie details.".to_string());
+            return Err(map_omdb_error(&message));
         }
         response.details.ok_or_else(|| {
             MetadataError::InvalidResponse("OMDb response missing details.".to_string())
@@ -210,6 +212,27 @@ impl OmdbClient {
         }
     }
 
+}
+
+fn map_omdb_error(message: &str) -> MetadataError {
+    let normalized = message.to_lowercase();
+    if normalized.contains("invalid api key")
+        || normalized.contains("no api key")
+        || normalized.contains("apikey")
+    {
+        return MetadataError::Other(format!("OMDb authentication failed: {message}"));
+    }
+    if normalized.contains("limit")
+        || normalized.contains("quota")
+        || normalized.contains("rate")
+        || normalized.contains("requests")
+    {
+        return MetadataError::RateLimited(format!("OMDb quota exceeded: {message}"));
+    }
+    if normalized.contains("not found") {
+        return MetadataError::NotFound(message.to_string());
+    }
+    MetadataError::InvalidResponse(message.to_string())
 }
 
 fn deserialize_year<'de, D>(deserializer: D) -> Result<Option<u16>, D::Error>
