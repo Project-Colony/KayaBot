@@ -2355,6 +2355,7 @@ or tvmaze_api_key.",
                 content_type_label: None,
                 confidence: None,
                 candidate_count: None,
+                metadata_source: None,
                 rename_note: None,
                 status_color: None,
                 muted_color: palette.subtext0,
@@ -2367,6 +2368,7 @@ or tvmaze_api_key.",
                     content_type_label: None,
                     confidence: None,
                     candidate_count: None,
+                    metadata_source: None,
                     rename_note: None,
                     status_color: None,
                     muted_color: palette.subtext0,
@@ -2379,6 +2381,7 @@ or tvmaze_api_key.",
                 content_type_label: None,
                 confidence: None,
                 candidate_count: None,
+                metadata_source: None,
                 rename_note: None,
                 status_color: None,
                 muted_color: palette.subtext0,
@@ -2402,6 +2405,16 @@ or tvmaze_api_key.",
                     candidate_count: result
                         .metadata_candidate_count
                         .or_else(|| Some(result.candidates.len())),
+                    metadata_source: result
+                        .episode_match
+                        .as_ref()
+                        .map(|episode| episode.source.clone())
+                        .or_else(|| {
+                            result
+                                .title_match
+                                .as_ref()
+                                .map(|title| title.source.clone())
+                        }),
                     rename_note: self
                         .rename_summaries
                         .iter()
@@ -3276,6 +3289,7 @@ struct NewNameRow {
     content_type_label: Option<String>,
     confidence: Option<f32>,
     candidate_count: Option<usize>,
+    metadata_source: Option<String>,
     rename_note: Option<(String, Color32)>,
     status_color: Option<Color32>,
     muted_color: Color32,
@@ -3317,12 +3331,20 @@ impl ListItem for NewNameRow {
                 if let Some(original) = &self.original {
                     let candidate_count = self.candidate_count.unwrap_or(1);
                     let detail = if let Some(confidence) = self.confidence {
-                        format!(
-                            "from {original} • {:.0}% confidence • {candidate_count} candidate(s)",
-                            confidence * 100.0
-                        )
+                        let mut parts = vec![format!("from {original}")];
+                        if let Some(source) = &self.metadata_source {
+                            parts.push(format!("source {source}"));
+                        }
+                        parts.push(format!("{:.0}% confiance globale", confidence * 100.0));
+                        parts.push(format!("{candidate_count} candidate(s)"));
+                        parts.join(" • ")
                     } else {
-                        format!("from {original} • {candidate_count} candidate(s)")
+                        let mut parts = vec![format!("from {original}")];
+                        if let Some(source) = &self.metadata_source {
+                            parts.push(format!("source {source}"));
+                        }
+                        parts.push(format!("{candidate_count} candidate(s)"));
+                        parts.join(" • ")
                     };
                     ui.label(RichText::new(detail).color(self.muted_color).size(10.0));
                 }

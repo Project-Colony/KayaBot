@@ -411,3 +411,180 @@ fn year_compatible(left: &TitleMatch, right: &TitleMatch) -> bool {
         _ => true,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    use crate::metadata::models::{EpisodeMatch, MetadataExtras, MovieMatch, TitleMatch};
+
+    struct MockProvider {
+        search_calls: Arc<AtomicUsize>,
+        episode_calls: Arc<AtomicUsize>,
+        movie_calls: Arc<AtomicUsize>,
+        search_response: Result<Vec<TitleMatch>, MetadataError>,
+        episode_response: Result<Vec<EpisodeMatch>, MetadataError>,
+        movie_response: Result<MovieMatch, MetadataError>,
+    }
+
+    impl MockProvider {
+        fn new(
+            search_response: Result<Vec<TitleMatch>, MetadataError>,
+            episode_response: Result<Vec<EpisodeMatch>, MetadataError>,
+        ) -> Self {
+            Self {
+                search_calls: Arc::new(AtomicUsize::new(0)),
+                episode_calls: Arc::new(AtomicUsize::new(0)),
+                movie_calls: Arc::new(AtomicUsize::new(0)),
+                search_response,
+                episode_response,
+                movie_response: Ok(MovieMatch {
+                    id: "movie".to_string(),
+                    title: "Movie".to_string(),
+                    year: Some(2024),
+                    source_score: 1.0,
+                    source_trust: 1.0,
+                    global_score: 1.0,
+                    source: "mock".to_string(),
+                    extras: MetadataExtras::default(),
+                }),
+            }
+        }
+    }
+
+    impl MetadataProvider for MockProvider {
+        fn search_title(&mut self, _query: &str) -> Result<Vec<TitleMatch>, MetadataError> {
+            self.search_calls.fetch_add(1, Ordering::SeqCst);
+            self.search_response.clone()
+        }
+
+        fn fetch_episode_list(
+            &mut self,
+            _title_id: &str,
+        ) -> Result<Vec<EpisodeMatch>, MetadataError> {
+            self.episode_calls.fetch_add(1, Ordering::SeqCst);
+            self.episode_response.clone()
+        }
+
+        fn fetch_movie_details(&mut self, _title_id: &str) -> Result<MovieMatch, MetadataError> {
+            self.movie_calls.fetch_add(1, Ordering::SeqCst);
+            self.movie_response.clone()
+        }
+    }
+
+    fn title_match(id: &str, name: &str, year: u16, score: f32, trust: f32) -> TitleMatch {
+        TitleMatch {
+            id: id.to_string(),
+            name: name.to_string(),
+            year: Some(year),
+            source_score: score,
+            source_trust: trust,
+            global_score: 0.0,
+            source: "mock".to_string(),
+            extras: MetadataExtras::default(),
+        }
+    }
+
+    fn episode_match(id: &str, season: u32, episode: u32) -> EpisodeMatch {
+        EpisodeMatch {
+            id: id.to_string(),
+            season,
+            episode,
+            title: "Episode".to_string(),
+            source_score: 1.0,
+            source_trust: 0.8,
+            global_score: 0.0,
+            source: "mock".to_string(),
+            extras: MetadataExtras::default(),
+        }
+    }
+
+    #[test]
+    fn search_title_queries_each_provider_and_sets_active_source() {
+        let tmdb = MockProvider::new(
+            Ok(vec![title_match("1", "Halo", 2024, 0.9, 0.9)]),
+            Err(MetadataError::Other("no episodes".to_string())),
+        );
+        let omdb = MockProvider::new(
+            Ok(vec![title_match("2", "Halo", 2023, 0.4, 0.6)]),
+            Err(MetadataError::Other("no episodes".to_string())),
+        );
+        let tmdb_calls = tmdb.search_calls.clone();
+        let omdb_calls = omdb.search_calls.clone();
+
+        let mut pipeline = MetadataPipeline::new(vec![
+            (MetadataSource::TheMovieDb, Box::new(tmdb)),
+            (MetadataSource::Omdb, Box::new(omdb)),
+        ]);
+
+        let results = pipeline.search_title("Halo").expect("search results");
+
+        assert_eq!(tmdb_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(omdb_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].source, "TheMovieDB");
+        assert_eq!(pipeline.active_source(), MetadataSource::TheMovieDb);
+    }
+
+    #[test]
+    fn search_title_falls_back_when_primary_errors() {
+        let tmdb = MockProvider::new(
+            Err(MetadataError::Network("tmdb down".to_string())),
+            Err(MetadataError::Other("no episodes".to_string())),
+        );
+        let omdb = MockProvider::new(
+            Ok(vec![title_match("2", "Halo", 2024, 0.7, 0.7)]),
+            Err(MetadataError::Other("no episodes".to_string())),
+        );
+        let tmdb_calls = tmdb.search_calls.clone();
+        let omdb_calls = omdb.search_calls.clone();
+
+        let mut pipeline = MetadataPipeline::new(vec![
+            (MetadataSource::TheMovieDb, Box::new(tmdb)),
+            (MetadataSource::Omdb, Box::new(omdb)),
+        ]);
+
+        let results = pipeline.search_title("Halo").expect("search results");
+
+        assert_eq!(tmdb_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(omdb_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].source, "OMDb");
+        assert_eq!(pipeline.active_source(), MetadataSource::Omdb);
+    }
+
+    #[test]
+    fn fetch_episode_list_tries_fallback_sources_in_order() {
+        let tvdb = MockProvider::new(
+            Err(MetadataError::Other("no titles".to_string())),
+            Err(MetadataError::NotFound("missing".to_string())),
+        );
+        let tvmaze = MockProvider::new(
+            Err(MetadataError::Other("no titles".to_string())),
+            Ok(vec![episode_match("ep1", 1, 1)]),
+        );
+        let anidb = MockProvider::new(
+            Err(MetadataError::Other("no titles".to_string())),
+            Err(MetadataError::NotFound("missing".to_string())),
+        );
+        let tvdb_calls = tvdb.episode_calls.clone();
+        let tvmaze_calls = tvmaze.episode_calls.clone();
+        let anidb_calls = anidb.episode_calls.clone();
+
+        let mut pipeline = MetadataPipeline::new(vec![
+            (MetadataSource::TheTvDb, Box::new(tvdb)),
+            (MetadataSource::TvMaze, Box::new(tvmaze)),
+            (MetadataSource::AniDb, Box::new(anidb)),
+        ]);
+
+        let results = pipeline.fetch_episode_list("halo").expect("episode list");
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(tvdb_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(tvmaze_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(anidb_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(pipeline.active_source(), MetadataSource::TvMaze);
+    }
+}
