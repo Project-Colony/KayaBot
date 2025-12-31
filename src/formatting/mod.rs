@@ -1,10 +1,15 @@
 use std::fs;
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(default)]
 pub struct FormatOptions {
     pub include_episode_title: bool,
     pub include_year: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub series_template: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub movie_template: Option<String>,
 }
 
 impl Default for FormatOptions {
@@ -12,6 +17,8 @@ impl Default for FormatOptions {
         Self {
             include_episode_title: true,
             include_year: true,
+            series_template: None,
+            movie_template: None,
         }
     }
 }
@@ -64,20 +71,26 @@ pub struct MovieFormatInput<'a> {
 }
 
 pub fn format_series_name(input: SeriesFormatInput<'_>, options: FormatOptions) -> String {
-    let template = if options.include_episode_title {
-        DEFAULT_SERIES_FORMAT
-    } else {
-        "{n} {s}x{e}"
-    };
+    let template = options
+        .series_template
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| {
+            if options.include_episode_title {
+                DEFAULT_SERIES_FORMAT
+            } else {
+                "{n} {s}x{e}"
+            }
+        });
     format_series_template(template, input)
 }
 
 pub fn format_movie_name(input: MovieFormatInput<'_>, options: FormatOptions) -> String {
-    let template = if options.include_year {
-        DEFAULT_MOVIE_FORMAT
-    } else {
-        "{n}"
-    };
+    let template = options
+        .movie_template
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| if options.include_year { DEFAULT_MOVIE_FORMAT } else { "{n}" });
     format_movie_template(template, input)
 }
 

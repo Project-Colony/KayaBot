@@ -1643,15 +1643,99 @@ environment variables.",
                     .checkbox(&mut self.format_options.include_year, "Include year")
                     .changed();
             });
+            let default_template = match self.content_type {
+                ContentType::Series => {
+                    if self.format_options.include_episode_title {
+                        DEFAULT_SERIES_FORMAT
+                    } else {
+                        "{n} {s}x{e}"
+                    }
+                }
+                ContentType::Movie => {
+                    if self.format_options.include_year {
+                        DEFAULT_MOVIE_FORMAT
+                    } else {
+                        "{n}"
+                    }
+                }
+            };
+            let current_template = match self.content_type {
+                ContentType::Series => self
+                    .format_options
+                    .series_template
+                    .as_deref()
+                    .filter(|value| !value.trim().is_empty())
+                    .unwrap_or(default_template),
+                ContentType::Movie => self
+                    .format_options
+                    .movie_template
+                    .as_deref()
+                    .filter(|value| !value.trim().is_empty())
+                    .unwrap_or(default_template),
+            };
+            let mut template_input = current_template.to_string();
+            let mut template_changed = false;
+            let mut preset_clicked = false;
+            let mut reset_clicked = false;
+            ui.horizontal(|ui| {
+                ui.label("Template");
+                template_changed = ui
+                    .add(
+                    egui::TextEdit::singleline(&mut template_input)
+                        .desired_width(220.0)
+                        .hint_text("Template de renommage"),
+                )
+                    .changed();
+                preset_clicked = ui.button("Preset").clicked();
+                reset_clicked = ui.button("Reset").clicked();
+            });
+            if preset_clicked {
+                let preset_template = match self.content_type {
+                    ContentType::Series => DEFAULT_SERIES_FORMAT,
+                    ContentType::Movie => DEFAULT_MOVIE_FORMAT,
+                };
+                match self.content_type {
+                    ContentType::Series => {
+                        self.format_options.series_template = Some(preset_template.to_string());
+                    }
+                    ContentType::Movie => {
+                        self.format_options.movie_template = Some(preset_template.to_string());
+                    }
+                }
+                format_changed = true;
+            } else if reset_clicked {
+                match self.content_type {
+                    ContentType::Series => {
+                        self.format_options.series_template = None;
+                        self.format_options.include_episode_title = true;
+                    }
+                    ContentType::Movie => {
+                        self.format_options.movie_template = None;
+                        self.format_options.include_year = true;
+                    }
+                }
+                format_changed = true;
+            } else if template_changed {
+                let normalized = if template_input.trim().is_empty() {
+                    None
+                } else {
+                    Some(template_input)
+                };
+                match self.content_type {
+                    ContentType::Series => {
+                        self.format_options.series_template = normalized;
+                    }
+                    ContentType::Movie => {
+                        self.format_options.movie_template = normalized;
+                    }
+                }
+                format_changed = true;
+            }
             if format_changed {
                 self.format_options.save();
             }
-            let format_label = match self.content_type {
-                ContentType::Series => DEFAULT_SERIES_FORMAT,
-                ContentType::Movie => DEFAULT_MOVIE_FORMAT,
-            };
             ui.label(
-                RichText::new(format_label)
+                RichText::new(default_template)
                     .size(10.0)
                     .color(palette.subtext0),
             );
@@ -1917,7 +2001,7 @@ environment variables.",
                     title: Some(episode_match.title.as_str()),
                     year: result.title_match.as_ref().and_then(|title| title.year.map(u32::from)),
                 },
-                self.format_options,
+                self.format_options.clone(),
             );
         }
 
@@ -1928,7 +2012,7 @@ environment variables.",
                         title: &title_match.name,
                         year: title_match.year.map(u32::from),
                     },
-                    self.format_options,
+                    self.format_options.clone(),
                 );
             }
         }
@@ -1952,7 +2036,7 @@ environment variables.",
                         title: None,
                         year,
                     },
-                    self.format_options,
+                    self.format_options.clone(),
                 );
             }
             if matches!(metadata, Some(matching::MatchMetadata::Movie { .. })) {
@@ -1961,7 +2045,7 @@ environment variables.",
                         title: &title_match.name,
                         year,
                     },
-                    self.format_options,
+                    self.format_options.clone(),
                 );
             }
             return title_match.name.clone();
@@ -2000,7 +2084,7 @@ environment variables.",
                         title: resolved_title,
                         year: None,
                     },
-                    self.format_options,
+                    self.format_options.clone(),
                 )
             }
             matching::MatchMetadata::Movie { title, year } => {
@@ -2010,7 +2094,7 @@ environment variables.",
                         title: movie_title,
                         year: *year,
                     },
-                    self.format_options,
+                    self.format_options.clone(),
                 )
             }
         }
