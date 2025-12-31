@@ -15,7 +15,11 @@ use metadata::providers::{
     anidb::AniDbClient, omdb::OmdbClient, thetvdb::TheTvDbClient, tmdb::TmdbClient,
     tvmaze::TvMazeClient,
 };
-use std::{env, fs, path::PathBuf};
+use std::{
+    collections::HashSet,
+    env, fs,
+    path::{Path, PathBuf},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LeftNav {
@@ -58,6 +62,24 @@ enum RenameUiState {
     Empty,
 }
 
+#[derive(Debug, Clone)]
+enum RenameOutcome {
+    Renamed,
+    DryRun,
+    Unchanged,
+    Skipped(String),
+    Failed(String),
+}
+
+#[derive(Debug, Clone)]
+struct RenameSummary {
+    original: String,
+    proposed: String,
+    resolved: String,
+    collision_adjusted: bool,
+    outcome: RenameOutcome,
+}
+
 struct RenameApp {
     active_left_nav: LeftNav,
     original_files: Vec<String>,
@@ -70,7 +92,9 @@ struct RenameApp {
     selected_title_id: Option<String>,
     episode_matches: Vec<EpisodeMatch>,
     show_match_picker: bool,
-    rename_feedback: Option<(usize, usize)>,
+    rename_feedback_message: Option<String>,
+    rename_dry_run: bool,
+    rename_summaries: Vec<RenameSummary>,
     format_options: FormatOptions,
     metadata_provider: MetadataPipeline,
     rename_ui_state: RenameUiState,
@@ -131,7 +155,9 @@ impl Default for RenameApp {
             selected_title_id: None,
             episode_matches: Vec::new(),
             show_match_picker: false,
-            rename_feedback: None,
+            rename_feedback_message: None,
+            rename_dry_run: false,
+            rename_summaries: Vec::new(),
             format_options: FormatOptions::load().unwrap_or_default(),
             metadata_provider,
             rename_ui_state,
@@ -296,7 +322,8 @@ impl RenameApp {
     fn refresh_after_file_update(&mut self) {
         self.match_results = matching::match_files(&self.original_files);
         self.apply_content_detection();
-        self.rename_feedback = None;
+        self.rename_feedback_message = None;
+        self.rename_summaries.clear();
         self.refresh_rename_ui_state();
     }
 
@@ -1010,7 +1037,8 @@ environment variables.",
         self.title_matches.clear();
         self.episode_matches.clear();
         self.selected_title_id = None;
-        self.rename_feedback = None;
+        self.rename_feedback_message = None;
+        self.rename_summaries.clear();
         self.detection_notice = None;
         match content_type {
             ContentType::Movie => self.preferred_movie_source = source,
@@ -1096,13 +1124,252 @@ environment variables.",
             if label == "Match" {
                 self.match_results = self.match_files_with_metadata();
                 self.apply_content_detection();
-                self.rename_feedback = None;
+                self.rename_feedback_message = None;
+                self.rename_summaries.clear();
                 self.refresh_rename_ui_state();
             } else if label == "Rename" {
-                let matched = self.episode_matches.len().min(self.original_files.len());
-                let unmatched = self.original_files.len().saturating_sub(matched);
-                self.rename_feedback = Some((matched, unmatched));
+                self.perform_rename();
             }
+        }
+    }
+
+    fn perform_rename(&mut self) {
+        self.rename_summaries.clear();
+        self.rename_feedback_message = None;
+
+        if self.match_results.is_empty() {
+            self.rename_feedback_message = Some("Aucun résultat à renommer.".to_string());
+            return;
+        }
+
+        let mut used_targets = HashSet::new();
+        let mut updated_files = self.original_files.clone();
+
+        for (index, original) in self.original_files.iter().enumerate() {
+            let Some(result) = self.match_results.get(index) else {
+                break;
+            };
+            let summary =
+                self.rename_single_file(index, original, result, &mut used_targets, &mut updated_files);
+            self.rename_summaries.push(summary);
+        }
+
+        if !self.rename_dry_run {
+            self.original_files = updated_files;
+            self.match_results = matching::match_files(&self.original_files);
+            self.apply_content_detection();
+        }
+
+        self.refresh_rename_ui_state();
+        self.rename_feedback_message = Some(self.rename_feedback_label());
+    }
+
+    fn rename_single_file(
+        &self,
+        index: usize,
+        original: &str,
+        result: &matching::MatchResult,
+        used_targets: &mut HashSet<PathBuf>,
+        updated_files: &mut [String],
+    ) -> RenameSummary {
+        let preview = self.format_preview(result);
+        let original_path = PathBuf::from(original);
+
+        if !original_path.exists() {
+            return RenameSummary {
+                original: original.to_string(),
+                proposed: preview,
+                resolved: original.to_string(),
+                collision_adjusted: false,
+                outcome: RenameOutcome::Failed("Fichier introuvable.".to_string()),
+            };
+        }
+
+        if matches!(result.status, matching::MatchStatus::Error)
+            || preview.trim().is_empty()
+            || preview == "—"
+        {
+            return RenameSummary {
+                original: original.to_string(),
+                proposed: preview,
+                resolved: original.to_string(),
+                collision_adjusted: false,
+                outcome: RenameOutcome::Skipped("Aucun nom proposé.".to_string()),
+            };
+        }
+
+        let target_path = self.build_target_path(&original_path, &preview);
+        let (resolved_path, collision_adjusted) =
+            self.resolve_collision(&target_path, used_targets);
+        let resolved_string = resolved_path.display().to_string();
+        used_targets.insert(resolved_path.clone());
+
+        if resolved_path == original_path {
+            return RenameSummary {
+                original: original.to_string(),
+                proposed: preview,
+                resolved: resolved_string,
+                collision_adjusted,
+                outcome: RenameOutcome::Unchanged,
+            };
+        }
+
+        if self.rename_dry_run {
+            return RenameSummary {
+                original: original.to_string(),
+                proposed: preview,
+                resolved: resolved_string,
+                collision_adjusted,
+                outcome: RenameOutcome::DryRun,
+            };
+        }
+
+        match self.rename_file(&original_path, &resolved_path) {
+            Ok(()) => {
+                if let Some(slot) = updated_files.get_mut(index) {
+                    *slot = resolved_string.clone();
+                }
+                RenameSummary {
+                    original: original.to_string(),
+                    proposed: preview,
+                    resolved: resolved_string,
+                    collision_adjusted,
+                    outcome: RenameOutcome::Renamed,
+                }
+            }
+            Err(err) => RenameSummary {
+                original: original.to_string(),
+                proposed: preview,
+                resolved: resolved_string,
+                collision_adjusted,
+                outcome: RenameOutcome::Failed(err),
+            },
+        }
+    }
+
+    fn build_target_path(&self, original: &Path, preview: &str) -> PathBuf {
+        let parent = original.parent().unwrap_or_else(|| Path::new(""));
+        let extension = original.extension().and_then(|ext| ext.to_str());
+        let file_name = match extension {
+            Some(ext) => {
+                let ext_suffix = format!(".{ext}");
+                if preview.to_lowercase().ends_with(&ext_suffix.to_lowercase()) {
+                    preview.to_string()
+                } else {
+                    format!("{preview}{ext_suffix}")
+                }
+            }
+            None => preview.to_string(),
+        };
+        parent.join(file_name)
+    }
+
+    fn resolve_collision(
+        &self,
+        target: &Path,
+        used_targets: &HashSet<PathBuf>,
+    ) -> (PathBuf, bool) {
+        if !target.exists() && !used_targets.contains(target) {
+            return (target.to_path_buf(), false);
+        }
+
+        let parent = target.parent().unwrap_or_else(|| Path::new(""));
+        let stem = target
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .unwrap_or("file");
+        let extension = target.extension().and_then(|value| value.to_str());
+
+        for suffix in 1..=9999 {
+            let file_name = match extension {
+                Some(ext) => format!("{stem} ({suffix}).{ext}"),
+                None => format!("{stem} ({suffix})"),
+            };
+            let candidate = parent.join(file_name);
+            if !candidate.exists() && !used_targets.contains(&candidate) {
+                return (candidate, true);
+            }
+        }
+
+        (target.to_path_buf(), true)
+    }
+
+    fn rename_file(&self, original: &Path, target: &Path) -> Result<(), String> {
+        if let Err(err) = fs::rename(original, target) {
+            if let Err(copy_err) = fs::copy(original, target) {
+                return Err(format!("Copie impossible: {copy_err}"));
+            }
+            if let Err(remove_err) = fs::remove_file(original) {
+                return Err(format!("Suppression impossible: {remove_err}"));
+            }
+            if !matches!(err.kind(), std::io::ErrorKind::CrossDeviceLink) {
+                eprintln!("Renommage direct échoué ({err}), copie + suppression appliquées.");
+            }
+        }
+        Ok(())
+    }
+
+    fn rename_feedback_label(&self) -> String {
+        let mut renamed = 0usize;
+        let mut dry_run = 0usize;
+        let mut skipped = 0usize;
+        let mut failed = 0usize;
+        let mut unchanged = 0usize;
+
+        for summary in &self.rename_summaries {
+            match summary.outcome {
+                RenameOutcome::Renamed => renamed += 1,
+                RenameOutcome::DryRun => dry_run += 1,
+                RenameOutcome::Skipped(_) => skipped += 1,
+                RenameOutcome::Failed(_) => failed += 1,
+                RenameOutcome::Unchanged => unchanged += 1,
+            }
+        }
+
+        if self.rename_dry_run {
+            format!(
+                "Prévisualisation: {dry_run} prêt(s) • {} ignoré(s) • {failed} échec(s)",
+                skipped + unchanged
+            )
+        } else {
+            format!(
+                "Renommés: {renamed} • Ignorés: {} • Échecs: {failed}",
+                skipped + unchanged
+            )
+        }
+    }
+
+    fn rename_note_for_summary(
+        &self,
+        summary: &RenameSummary,
+        palette: &ThemePalette,
+    ) -> (String, Color32) {
+        let collision_note = if summary.collision_adjusted {
+            " (collision résolue)"
+        } else {
+            ""
+        };
+        match &summary.outcome {
+            RenameOutcome::Renamed => (
+                format!("Renommé → {}{collision_note}", summary.resolved),
+                palette.success,
+            ),
+            RenameOutcome::DryRun => (
+                format!("Dry-run → {}{collision_note}", summary.resolved),
+                palette.warning,
+            ),
+            RenameOutcome::Unchanged => (
+                format!("Déjà nommé → {}{collision_note}", summary.resolved),
+                palette.subtext0,
+            ),
+            RenameOutcome::Skipped(message) => (
+                format!("Ignoré: {message}"),
+                palette.subtext0,
+            ),
+            RenameOutcome::Failed(message) => (
+                format!("Échec: {message}"),
+                palette.danger,
+            ),
         }
     }
 
@@ -1198,7 +1465,8 @@ environment variables.",
 
     fn fetch_metadata(&mut self) {
         self.fetch_status = FetchStatus::Loading;
-        self.rename_feedback = None;
+        self.rename_feedback_message = None;
+        self.rename_summaries.clear();
         self.refresh_rename_ui_state();
 
         let parsed_hint = self.detect_search_hint();
@@ -1372,6 +1640,9 @@ environment variables.",
                     .color(palette.subtext0),
             );
             ui.add_space(6.0);
+            ui.label(RichText::new("Rename").size(12.0));
+            ui.checkbox(&mut self.rename_dry_run, "Dry-run / prévisualisation");
+            ui.add_space(6.0);
             ui.label(RichText::new("Proposed Results").size(12.0));
             ui.label(
                 RichText::new(format!(
@@ -1409,11 +1680,9 @@ environment variables.",
                 });
             }
 
-            if let Some((matched, unmatched)) = self.rename_feedback {
+            if let Some(message) = &self.rename_feedback_message {
                 ui.add_space(6.0);
-                ui.label(
-                    RichText::new(format!("{matched} renamed / {unmatched} unmatched")).strong(),
-                );
+                ui.label(RichText::new(message).strong());
             }
         });
     }
@@ -1483,6 +1752,7 @@ environment variables.",
                 original: None,
                 confidence: None,
                 candidate_count: None,
+                rename_note: None,
                 status_color: None,
                 muted_color: palette.subtext0,
             }],
@@ -1493,6 +1763,7 @@ environment variables.",
                     original: None,
                     confidence: None,
                     candidate_count: None,
+                    rename_note: None,
                     status_color: None,
                     muted_color: palette.subtext0,
                 }]
@@ -1503,6 +1774,7 @@ environment variables.",
                 original: None,
                 confidence: None,
                 candidate_count: None,
+                rename_note: None,
                 status_color: None,
                 muted_color: palette.subtext0,
             }],
@@ -1519,6 +1791,11 @@ environment variables.",
                     candidate_count: result
                         .metadata_candidate_count
                         .or_else(|| Some(result.candidates.len())),
+                    rename_note: self
+                        .rename_summaries
+                        .iter()
+                        .find(|summary| summary.original == result.original)
+                        .map(|summary| self.rename_note_for_summary(summary, &palette)),
                     status_color: Some(match result.status {
                         matching::MatchStatus::Ok => palette.success,
                         matching::MatchStatus::Ambiguous => palette.warning,
@@ -2274,6 +2551,7 @@ struct NewNameRow {
     original: Option<String>,
     confidence: Option<f32>,
     candidate_count: Option<usize>,
+    rename_note: Option<(String, Color32)>,
     status_color: Option<Color32>,
     muted_color: Color32,
 }
@@ -2314,6 +2592,9 @@ impl ListItem for NewNameRow {
                         format!("from {original} • {candidate_count} candidate(s)")
                     };
                     ui.label(RichText::new(detail).color(self.muted_color).size(10.0));
+                }
+                if let Some((note, color)) = &self.rename_note {
+                    ui.label(RichText::new(note).color(*color).size(10.0));
                 }
             });
         } else {
