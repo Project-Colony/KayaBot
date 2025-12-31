@@ -1123,6 +1123,7 @@ environment variables.",
         let Ok(title_matches) = self.metadata_provider.search_title(&query) else {
             return;
         };
+        result.metadata_candidate_count = Some(title_matches.len());
         let Some(best_title) = title_matches.iter().max_by(|a, b| {
             a.global_score
                 .partial_cmp(&b.global_score)
@@ -1130,6 +1131,7 @@ environment variables.",
         }) else {
             return;
         };
+        result.metadata_confidence = Some(best_title.global_score);
         result.title_match = Some(best_title.clone());
 
         let Some((season, episode)) = self.episode_hint(result) else {
@@ -1138,17 +1140,28 @@ environment variables.",
         let Ok(episodes) = self.metadata_provider.fetch_episode_list(&best_title.id) else {
             return;
         };
-        result.episode_match = episodes
+        let mut candidate_count = 0usize;
+        let mut best_episode: Option<&EpisodeMatch> = None;
+        for episode_match in episodes
             .iter()
-            .filter(|episode_match| {
-                episode_match.season == season && episode_match.episode == episode
-            })
-            .max_by(|a, b| {
-                a.global_score
-                    .partial_cmp(&b.global_score)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
-            .cloned();
+            .filter(|episode_match| episode_match.season == season && episode_match.episode == episode)
+        {
+            candidate_count += 1;
+            let should_replace = best_episode
+                .as_ref()
+                .map(|current| episode_match.global_score > current.global_score)
+                .unwrap_or(true);
+            if should_replace {
+                best_episode = Some(episode_match);
+            }
+        }
+        if candidate_count > 0 {
+            result.metadata_candidate_count = Some(candidate_count);
+        }
+        if let Some(best_episode) = best_episode.cloned() {
+            result.metadata_confidence = Some(best_episode.global_score);
+            result.episode_match = Some(best_episode);
+        }
     }
 
     fn match_query_for_result(&self, result: &matching::MatchResult) -> Option<String> {
@@ -1500,8 +1513,12 @@ environment variables.",
                     name: self.format_preview(result),
                     status: Some(result.status),
                     original: Some(result.original.clone()),
-                    confidence: Some(result.confidence),
-                    candidate_count: Some(result.candidates.len()),
+                    confidence: result
+                        .metadata_confidence
+                        .or_else(|| Some(result.confidence)),
+                    candidate_count: result
+                        .metadata_candidate_count
+                        .or_else(|| Some(result.candidates.len())),
                     status_color: Some(match result.status {
                         matching::MatchStatus::Ok => palette.success,
                         matching::MatchStatus::Ambiguous => palette.warning,
@@ -1605,10 +1622,22 @@ environment variables.",
                     season: episode_match.season,
                     episode: episode_match.episode,
                     title: Some(episode_match.title.as_str()),
-                    year: None,
+                    year: result.title_match.as_ref().and_then(|title| title.year.map(u32::from)),
                 },
                 self.format_options,
             );
+        }
+
+        if self.content_type == ContentType::Movie {
+            if let Some(title_match) = &result.title_match {
+                return formatting::format_movie_name(
+                    MovieFormatInput {
+                        title: &title_match.name,
+                        year: title_match.year.map(u32::from),
+                    },
+                    self.format_options,
+                );
+            }
         }
 
         if let Some(title_match) = &result.title_match {
