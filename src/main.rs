@@ -275,7 +275,7 @@ impl eframe::App for RenameApp {
 
 impl RenameApp {
     fn apply_theme(&mut self, ctx: &egui::Context) {
-        let visuals = match self.user_preferences.theme {
+        let visuals = match self.user_preferences.appearance.theme {
             ThemeChoice::System => self
                 .system_visuals
                 .clone()
@@ -325,7 +325,7 @@ impl RenameApp {
     }
 
     fn theme_palette(&self) -> ThemePalette {
-        ThemePalette::from_theme(self.user_preferences.theme)
+        ThemePalette::from_theme(self.user_preferences.appearance.theme)
     }
 
     fn handle_dropped_files(&mut self, ctx: &egui::Context) {
@@ -860,25 +860,25 @@ impl RenameApp {
         ui.add_space(6.0);
         changed |= ui
             .checkbox(
-                &mut self.user_preferences.open_last_session,
+                &mut self.user_preferences.connections.open_last_session,
                 "Restore last session on launch",
             )
             .changed();
         changed |= ui
             .checkbox(
-                &mut self.user_preferences.auto_save_queue,
+                &mut self.user_preferences.connections.auto_save_queue,
                 "Auto-save rename queue",
             )
             .changed();
         changed |= ui
             .checkbox(
-                &mut self.user_preferences.check_updates_on_launch,
+                &mut self.user_preferences.connections.check_updates_on_launch,
                 "Check for updates on launch",
             )
             .changed();
         changed |= ui
             .checkbox(
-                &mut self.user_preferences.confirm_before_rename,
+                &mut self.user_preferences.connections.confirm_before_rename,
                 "Ask for confirmation before renaming",
             )
             .changed();
@@ -1034,11 +1034,11 @@ api_keys.toml, then config.toml.",
         ui.label(RichText::new("Language").font(FontId::proportional(18.0)));
         ui.add_space(6.0);
         let language_response = egui::ComboBox::from_id_source("settings_language")
-            .selected_text(self.user_preferences.language.label())
+            .selected_text(self.user_preferences.language.language.label())
             .show_ui(ui, |ui| {
                 for language in LanguageChoice::all() {
                     ui.selectable_value(
-                        &mut self.user_preferences.language,
+                        &mut self.user_preferences.language.language,
                         language,
                         language.label(),
                     );
@@ -1046,19 +1046,23 @@ api_keys.toml, then config.toml.",
             });
         changed |= language_response.response.changed();
         let region_response = egui::ComboBox::from_id_source("settings_region")
-            .selected_text(self.user_preferences.region.label())
+            .selected_text(self.user_preferences.language.region.label())
             .show_ui(ui, |ui| {
                 for region in RegionChoice::all() {
-                    ui.selectable_value(&mut self.user_preferences.region, region, region.label());
+                    ui.selectable_value(
+                        &mut self.user_preferences.language.region,
+                        region,
+                        region.label(),
+                    );
                 }
             });
         changed |= region_response.response.changed();
         let date_response = egui::ComboBox::from_id_source("settings_date_format")
-            .selected_text(self.user_preferences.date_format.label())
+            .selected_text(self.user_preferences.language.date_format.label())
             .show_ui(ui, |ui| {
                 for format in DateFormat::all() {
                     ui.selectable_value(
-                        &mut self.user_preferences.date_format,
+                        &mut self.user_preferences.language.date_format,
                         format,
                         format.label(),
                     );
@@ -1076,19 +1080,23 @@ api_keys.toml, then config.toml.",
         ui.label(RichText::new("Appearance").font(FontId::proportional(18.0)));
         ui.add_space(6.0);
         let theme_response = egui::ComboBox::from_id_source("settings_theme")
-            .selected_text(self.user_preferences.theme.label())
+            .selected_text(self.user_preferences.appearance.theme.label())
             .show_ui(ui, |ui| {
                 for theme in ThemeChoice::all() {
-                    ui.selectable_value(&mut self.user_preferences.theme, theme, theme.label());
+                    ui.selectable_value(
+                        &mut self.user_preferences.appearance.theme,
+                        theme,
+                        theme.label(),
+                    );
                 }
             });
         changed |= theme_response.response.changed();
         let density_response = egui::ComboBox::from_id_source("settings_density")
-            .selected_text(self.user_preferences.density.label())
+            .selected_text(self.user_preferences.appearance.density.label())
             .show_ui(ui, |ui| {
                 for density in DensityChoice::all() {
                     ui.selectable_value(
-                        &mut self.user_preferences.density,
+                        &mut self.user_preferences.appearance.density,
                         density,
                         density.label(),
                     );
@@ -1097,13 +1105,13 @@ api_keys.toml, then config.toml.",
         changed |= density_response.response.changed();
         changed |= ui
             .checkbox(
-                &mut self.user_preferences.show_section_headers,
+                &mut self.user_preferences.appearance.show_section_headers,
                 "Show section headers",
             )
             .changed();
         changed |= ui
             .checkbox(
-                &mut self.user_preferences.animate_transitions,
+                &mut self.user_preferences.appearance.animate_transitions,
                 "Animate transitions",
             )
             .changed();
@@ -1116,25 +1124,25 @@ api_keys.toml, then config.toml.",
         ui.add_space(6.0);
         changed |= ui
             .checkbox(
-                &mut self.user_preferences.show_tips,
+                &mut self.user_preferences.experience.show_tips,
                 "Show tips and onboarding hints",
             )
             .changed();
         changed |= ui
             .checkbox(
-                &mut self.user_preferences.enable_sound_cues,
+                &mut self.user_preferences.experience.enable_sound_cues,
                 "Enable subtle sound cues",
             )
             .changed();
         changed |= ui
             .checkbox(
-                &mut self.user_preferences.show_status_toasts,
+                &mut self.user_preferences.experience.show_status_toasts,
                 "Show status notifications",
             )
             .changed();
         changed |= ui
             .checkbox(
-                &mut self.user_preferences.highlight_matches,
+                &mut self.user_preferences.experience.highlight_matches,
                 "Highlight confident matches",
             )
             .changed();
@@ -1148,25 +1156,25 @@ api_keys.toml, then config.toml.",
         ui.add_space(6.0);
         changed |= ui
             .checkbox(
-                &mut self.user_preferences.enable_quick_actions,
+                &mut self.user_preferences.utilities.enable_quick_actions,
                 "Enable quick actions toolbar",
             )
             .changed();
         changed |= ui
             .checkbox(
-                &mut self.user_preferences.confirm_before_clearing,
+                &mut self.user_preferences.utilities.confirm_before_clearing,
                 "Confirm before clearing lists",
             )
             .changed();
         changed |= ui
             .checkbox(
-                &mut self.user_preferences.copy_results_to_clipboard,
+                &mut self.user_preferences.utilities.copy_results_to_clipboard,
                 "Copy results to clipboard after rename",
             )
             .changed();
         changed |= ui
             .checkbox(
-                &mut self.user_preferences.keep_logs,
+                &mut self.user_preferences.utilities.keep_logs,
                 "Keep local activity logs",
             )
             .changed();
@@ -3623,7 +3631,133 @@ impl DensityChoice {
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(default)]
+struct ConnectionsPreferences {
+    open_last_session: bool,
+    auto_save_queue: bool,
+    check_updates_on_launch: bool,
+    confirm_before_rename: bool,
+}
+
+impl Default for ConnectionsPreferences {
+    fn default() -> Self {
+        Self {
+            open_last_session: true,
+            auto_save_queue: true,
+            check_updates_on_launch: true,
+            confirm_before_rename: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(default)]
+struct LanguagePreferences {
+    language: LanguageChoice,
+    region: RegionChoice,
+    date_format: DateFormat,
+}
+
+impl Default for LanguagePreferences {
+    fn default() -> Self {
+        Self {
+            language: LanguageChoice::System,
+            region: RegionChoice::Auto,
+            date_format: DateFormat::System,
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(default)]
+struct AppearancePreferences {
+    theme: ThemeChoice,
+    density: DensityChoice,
+    show_section_headers: bool,
+    animate_transitions: bool,
+}
+
+impl Default for AppearancePreferences {
+    fn default() -> Self {
+        Self {
+            theme: ThemeChoice::System,
+            density: DensityChoice::Comfortable,
+            show_section_headers: true,
+            animate_transitions: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(default)]
+struct ExperiencePreferences {
+    show_tips: bool,
+    enable_sound_cues: bool,
+    show_status_toasts: bool,
+    highlight_matches: bool,
+}
+
+impl Default for ExperiencePreferences {
+    fn default() -> Self {
+        Self {
+            show_tips: true,
+            enable_sound_cues: false,
+            show_status_toasts: true,
+            highlight_matches: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(default)]
+struct UtilitiesPreferences {
+    enable_quick_actions: bool,
+    confirm_before_clearing: bool,
+    copy_results_to_clipboard: bool,
+    keep_logs: bool,
+}
+
+impl Default for UtilitiesPreferences {
+    fn default() -> Self {
+        Self {
+            enable_quick_actions: true,
+            confirm_before_clearing: true,
+            copy_results_to_clipboard: false,
+            keep_logs: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(default)]
 struct UserPreferences {
+    #[serde(rename = "Connections")]
+    connections: ConnectionsPreferences,
+    #[serde(rename = "Language")]
+    language: LanguagePreferences,
+    #[serde(rename = "Appearance")]
+    appearance: AppearancePreferences,
+    #[serde(rename = "Experience")]
+    experience: ExperiencePreferences,
+    #[serde(rename = "Utilities")]
+    utilities: UtilitiesPreferences,
+}
+
+impl Default for UserPreferences {
+    fn default() -> Self {
+        Self {
+            connections: ConnectionsPreferences::default(),
+            language: LanguagePreferences::default(),
+            appearance: AppearancePreferences::default(),
+            experience: ExperiencePreferences::default(),
+            utilities: UtilitiesPreferences::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(default)]
+struct UserPreferencesFlat {
     open_last_session: bool,
     auto_save_queue: bool,
     check_updates_on_launch: bool,
@@ -3645,7 +3779,7 @@ struct UserPreferences {
     keep_logs: bool,
 }
 
-impl Default for UserPreferences {
+impl Default for UserPreferencesFlat {
     fn default() -> Self {
         Self {
             open_last_session: true,
@@ -3671,11 +3805,57 @@ impl Default for UserPreferences {
     }
 }
 
+impl From<UserPreferencesFlat> for UserPreferences {
+    fn from(flat: UserPreferencesFlat) -> Self {
+        Self {
+            connections: ConnectionsPreferences {
+                open_last_session: flat.open_last_session,
+                auto_save_queue: flat.auto_save_queue,
+                check_updates_on_launch: flat.check_updates_on_launch,
+                confirm_before_rename: flat.confirm_before_rename,
+            },
+            language: LanguagePreferences {
+                language: flat.language,
+                region: flat.region,
+                date_format: flat.date_format,
+            },
+            appearance: AppearancePreferences {
+                theme: flat.theme,
+                density: flat.density,
+                show_section_headers: flat.show_section_headers,
+                animate_transitions: flat.animate_transitions,
+            },
+            experience: ExperiencePreferences {
+                show_tips: flat.show_tips,
+                enable_sound_cues: flat.enable_sound_cues,
+                show_status_toasts: flat.show_status_toasts,
+                highlight_matches: flat.highlight_matches,
+            },
+            utilities: UtilitiesPreferences {
+                enable_quick_actions: flat.enable_quick_actions,
+                confirm_before_clearing: flat.confirm_before_clearing,
+                copy_results_to_clipboard: flat.copy_results_to_clipboard,
+                keep_logs: flat.keep_logs,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(untagged)]
+enum UserPreferencesFormat {
+    Nested(UserPreferences),
+    Flat(UserPreferencesFlat),
+}
+
 impl UserPreferences {
     fn load() -> Option<Self> {
         let path = Self::preferences_path()?;
         let contents = fs::read_to_string(path).ok()?;
-        toml::from_str(&contents).ok()
+        match toml::from_str::<UserPreferencesFormat>(&contents).ok()? {
+            UserPreferencesFormat::Nested(preferences) => Some(preferences),
+            UserPreferencesFormat::Flat(preferences) => Some(preferences.into()),
+        }
     }
 
     fn save(&self) {
@@ -3701,13 +3881,13 @@ impl UserPreferences {
     }
 
     fn metadata_locale(&self) -> Option<MetadataLocale> {
-        let language = match self.language {
+        let language = match self.language.language {
             LanguageChoice::System => None,
             LanguageChoice::English => Some("en".to_string()),
             LanguageChoice::French => Some("fr".to_string()),
             LanguageChoice::Spanish => Some("es".to_string()),
         };
-        let region = match self.region {
+        let region = match self.language.region {
             RegionChoice::Auto => None,
             RegionChoice::France => Some("FR".to_string()),
             RegionChoice::UnitedStates => Some("US".to_string()),
