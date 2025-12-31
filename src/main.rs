@@ -114,7 +114,10 @@ impl AppConfig {
     fn load() -> Option<Self> {
         let path = Self::config_path()?;
         let contents = fs::read_to_string(path).ok()?;
-        toml::from_str(&contents).ok()
+        let mut config: Self = toml::from_str(&contents).ok()?;
+        config.original_files.clear();
+        config.match_results.clear();
+        Some(config)
     }
 
     fn save(&self) {
@@ -397,8 +400,8 @@ impl RenameApp {
 
     fn persist_config(&self) {
         let config = AppConfig {
-            original_files: self.original_files.clone(),
-            match_results: self.match_results.clone(),
+            original_files: Vec::new(),
+            match_results: Vec::new(),
             format_options: self.format_options.clone(),
         };
         config.save();
