@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::Duration;
 
 use serde::Deserialize;
 
@@ -14,15 +15,31 @@ pub struct OmdbClient {
 
 #[derive(Debug, Clone, Deserialize)]
 struct OmdbSearchItem {
+    #[serde(rename = "imdbID", alias = "imdb_id")]
     imdb_id: String,
+    #[serde(rename = "Title", alias = "title")]
     title: String,
+    #[serde(
+        rename = "Year",
+        alias = "year",
+        default,
+        deserialize_with = "deserialize_year"
+    )]
     year: Option<u16>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 struct OmdbMovieDetails {
+    #[serde(rename = "imdbID", alias = "imdb_id")]
     imdb_id: String,
+    #[serde(rename = "Title", alias = "title")]
     title: String,
+    #[serde(
+        rename = "Year",
+        alias = "year",
+        default,
+        deserialize_with = "deserialize_year"
+    )]
     year: Option<u16>,
 }
 
@@ -43,6 +60,108 @@ impl OmdbClient {
         headers.insert("X-OMDb-API-Key".to_string(), self.api_key.clone());
         headers.insert("Accept".to_string(), "application/json".to_string());
         headers
+    }
+
+    fn http_client(&self) -> Result<reqwest::blocking::Client, MetadataError> {
+        reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .map_err(|err| MetadataError::Network(format!("Failed to build HTTP client: {err}")))
+    }
+
+    fn get_json<T: for<'de> Deserialize<'de>>(
+        &self,
+        query: &[(&str, &str)],
+    ) -> Result<T, MetadataError> {
+        if self.api_key.trim().is_empty() {
+            return Err(MetadataError::Other(
+                "OMDb API key is not configured.".to_string(),
+            ));
+        }
+        let client = self.http_client()?;
+        let response = client
+            .get(&self.base_url)
+            .header(reqwest::header::ACCEPT, "application/json")
+            .query(query)
+            .send()
+            .map_err(|err| {
+                if err.is_timeout() {
+                    MetadataError::Network("OMDb request timed out.".to_string())
+                } else {
+                    MetadataError::Network(format!("OMDb request failed: {err}"))
+                }
+            })?;
+        let status = response.status();
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Err(MetadataError::NotFound(
+                "OMDb did not return any results.".to_string(),
+            ));
+        }
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            return Err(MetadataError::RateLimited(
+                "OMDb rate limit exceeded.".to_string(),
+            ));
+        }
+        if !status.is_success() {
+            return Err(MetadataError::InvalidResponse(format!(
+                "OMDb returned status {status}."
+            )));
+        }
+        response.json::<T>().map_err(|err| {
+            MetadataError::InvalidResponse(format!("Failed to parse OMDb response: {err}"))
+        })
+    }
+
+    fn search_titles(&self, query: &str) -> Result<Vec<OmdbSearchItem>, MetadataError> {
+        #[derive(Deserialize)]
+        struct SearchResponse {
+            #[serde(default, rename = "Search")]
+            search: Vec<OmdbSearchItem>,
+            #[serde(default, rename = "Response")]
+            response: String,
+            #[serde(default, rename = "Error")]
+            error: Option<String>,
+        }
+        let response: SearchResponse = self.get_json(&[
+            ("s", query),
+            ("apikey", &self.api_key),
+        ])?;
+        if response.response.to_lowercase() == "false" {
+            return Err(MetadataError::NotFound(
+                response.error.unwrap_or_else(|| "OMDb returned no matches.".to_string()),
+            ));
+        }
+        if response.search.is_empty() {
+            return Err(MetadataError::NotFound(
+                "OMDb returned no matches.".to_string(),
+            ));
+        }
+        Ok(response.search)
+    }
+
+    fn fetch_movie(&self, title_id: &str) -> Result<OmdbMovieDetails, MetadataError> {
+        #[derive(Deserialize)]
+        struct MovieResponse {
+            #[serde(default, rename = "Response")]
+            response: String,
+            #[serde(default, rename = "Error")]
+            error: Option<String>,
+            #[serde(flatten)]
+            details: Option<OmdbMovieDetails>,
+        }
+        let response: MovieResponse = self.get_json(&[
+            ("i", title_id),
+            ("apikey", &self.api_key),
+            ("plot", "short"),
+        ])?;
+        if response.response.to_lowercase() == "false" {
+            return Err(MetadataError::NotFound(
+                response.error.unwrap_or_else(|| "OMDb returned no movie details.".to_string()),
+            ));
+        }
+        response.details.ok_or_else(|| {
+            MetadataError::InvalidResponse("OMDb response missing details.".to_string())
+        })
     }
 
     fn normalize_title(&self, item: OmdbSearchItem) -> TitleMatch {
@@ -91,20 +210,28 @@ impl OmdbClient {
         }
     }
 
-    fn mock_search_results(&self, query: &str) -> Vec<OmdbSearchItem> {
-        vec![OmdbSearchItem {
-            imdb_id: "tt0000001".to_string(),
-            title: query.to_string(),
-            year: None,
-        }]
-    }
+}
 
-    fn mock_movie_details(&self, _title_id: &str) -> OmdbMovieDetails {
-        OmdbMovieDetails {
-            imdb_id: "tt0000001".to_string(),
-            title: "Example Movie".to_string(),
-            year: None,
+fn deserialize_year<'de, D>(deserializer: D) -> Result<Option<u16>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    match value {
+        serde_json::Value::Number(number) => Ok(number.as_u64().map(|val| val as u16)),
+        serde_json::Value::String(text) => {
+            let year = text
+                .chars()
+                .take(4)
+                .collect::<String>()
+                .parse::<u16>()
+                .ok();
+            Ok(year)
         }
+        _ => Ok(None),
     }
 }
 
@@ -115,7 +242,7 @@ impl MetadataProvider for OmdbClient {
                 "Search query cannot be empty.".to_string(),
             ));
         }
-        let results = self.mock_search_results(query);
+        let results = self.search_titles(query)?;
         Ok(results
             .into_iter()
             .map(|item| self.normalize_title(item))
@@ -134,7 +261,7 @@ impl MetadataProvider for OmdbClient {
                 "Title identifier cannot be empty.".to_string(),
             ));
         }
-        let details = self.mock_movie_details(title_id);
+        let details = self.fetch_movie(title_id)?;
         Ok(self.normalize_movie(details))
     }
 }

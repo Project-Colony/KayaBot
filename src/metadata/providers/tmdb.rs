@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::Duration;
 
 use serde::Deserialize;
 
@@ -15,9 +16,16 @@ pub struct TmdbClient {
 #[derive(Debug, Clone, Deserialize)]
 struct TmdbTitle {
     id: u32,
-    name: String,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    title: Option<String>,
     release_date: Option<String>,
+    first_air_date: Option<String>,
+    #[serde(default)]
     vote_average: f32,
+    #[serde(default)]
+    media_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -57,15 +65,119 @@ impl TmdbClient {
         headers
     }
 
+    fn http_client(&self) -> Result<reqwest::blocking::Client, MetadataError> {
+        reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .map_err(|err| MetadataError::Network(format!("Failed to build HTTP client: {err}")))
+    }
+
+    fn headers(&self) -> Result<reqwest::header::HeaderMap, MetadataError> {
+        if self.api_key.trim().is_empty() {
+            return Err(MetadataError::Other(
+                "TMDB API token is not configured.".to_string(),
+            ));
+        }
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            reqwest::header::AUTHORIZATION,
+            format!("Bearer {}", self.api_key)
+                .parse()
+                .map_err(|err| {
+                    MetadataError::Other(format!("Invalid TMDB auth header: {err}"))
+                })?,
+        );
+        headers.insert(
+            reqwest::header::ACCEPT,
+            "application/json"
+                .parse()
+                .map_err(|err| MetadataError::Other(format!("Invalid TMDB accept header: {err}")))?,
+        );
+        Ok(headers)
+    }
+
+    fn get_json<T: for<'de> Deserialize<'de>>(
+        &self,
+        path: &str,
+        query: &[(&str, &str)],
+    ) -> Result<T, MetadataError> {
+        let client = self.http_client()?;
+        let url = format!("{}{}", self.base_url, path);
+        let response = client
+            .get(url)
+            .headers(self.headers()?)
+            .query(query)
+            .send()
+            .map_err(|err| {
+                if err.is_timeout() {
+                    MetadataError::Network("TMDB request timed out.".to_string())
+                } else {
+                    MetadataError::Network(format!("TMDB request failed: {err}"))
+                }
+            })?;
+        let status = response.status();
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Err(MetadataError::NotFound(
+                "TMDB did not return any results.".to_string(),
+            ));
+        }
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            return Err(MetadataError::RateLimited(
+                "TMDB rate limit exceeded.".to_string(),
+            ));
+        }
+        if !status.is_success() {
+            return Err(MetadataError::InvalidResponse(format!(
+                "TMDB returned status {status}."
+            )));
+        }
+        response.json::<T>().map_err(|err| {
+            MetadataError::InvalidResponse(format!("Failed to parse TMDB response: {err}"))
+        })
+    }
+
+    fn search_titles(&self, query: &str) -> Result<Vec<TmdbTitle>, MetadataError> {
+        #[derive(Deserialize)]
+        struct SearchResponse {
+            results: Vec<TmdbTitle>,
+        }
+        let response: SearchResponse = self.get_json(
+            "/search/multi",
+            &[("query", query), ("include_adult", "false")],
+        )?;
+        if response.results.is_empty() {
+            return Err(MetadataError::NotFound(
+                "TMDB returned no matches.".to_string(),
+            ));
+        }
+        Ok(response.results)
+    }
+
+    fn fetch_tv_details(&self, title_id: &str) -> Result<TmdbTvDetails, MetadataError> {
+        self.get_json(&format!("/tv/{title_id}"), &[])
+    }
+
+    fn fetch_season(&self, title_id: &str, season_number: u32) -> Result<TmdbSeasonDetails, MetadataError> {
+        self.get_json(&format!("/tv/{title_id}/season/{season_number}"), &[])
+    }
+
+    fn fetch_movie(&self, title_id: &str) -> Result<TmdbMovieDetails, MetadataError> {
+        self.get_json(&format!("/movie/{title_id}"), &[])
+    }
+
     fn normalize_title(&self, title: TmdbTitle) -> TitleMatch {
         let source_score = title.vote_average / 10.0;
         let source_trust = 0.9;
         let global_score = source_score * source_trust;
+        let name = title
+            .name
+            .or(title.title)
+            .unwrap_or_else(|| "Unknown title".to_string());
+        let date = title.release_date.or(title.first_air_date);
         TitleMatch {
             id: title.id.to_string(),
-            name: title.name,
-            year: title
-                .release_date
+            name,
+            year: date
                 .as_deref()
                 .and_then(|date| date.get(0..4))
                 .and_then(|year| year.parse::<u16>().ok()),
@@ -132,31 +244,23 @@ impl TmdbClient {
         }
     }
 
-    fn mock_search_results(&self, query: &str) -> Vec<TmdbTitle> {
-        vec![TmdbTitle {
-            id: 1,
-            name: query.to_string(),
-            release_date: None,
-            vote_average: 8.0,
-        }]
-    }
+}
 
-    fn mock_episode_results(&self, _title_id: &str) -> Vec<TmdbEpisode> {
-        vec![TmdbEpisode {
-            id: 1,
-            season_number: 1,
-            episode_number: 1,
-            name: "Pilot".to_string(),
-        }]
-    }
+#[derive(Debug, Clone, Deserialize)]
+struct TmdbTvDetails {
+    #[serde(default)]
+    seasons: Vec<TmdbSeasonRef>,
+}
 
-    fn mock_movie_details(&self, title_id: &str) -> TmdbMovieDetails {
-        TmdbMovieDetails {
-            id: title_id.parse::<u32>().unwrap_or(1),
-            title: "Example Movie".to_string(),
-            release_date: None,
-        }
-    }
+#[derive(Debug, Clone, Deserialize)]
+struct TmdbSeasonRef {
+    season_number: u32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct TmdbSeasonDetails {
+    #[serde(default)]
+    episodes: Vec<TmdbEpisode>,
 }
 
 impl MetadataProvider for TmdbClient {
@@ -166,9 +270,10 @@ impl MetadataProvider for TmdbClient {
                 "Search query cannot be empty.".to_string(),
             ));
         }
-        let results = self.mock_search_results(query);
+        let results = self.search_titles(query)?;
         Ok(results
             .into_iter()
+            .filter(|title| title.media_type.as_deref() != Some("person"))
             .map(|title| self.normalize_title(title))
             .collect())
     }
@@ -179,11 +284,25 @@ impl MetadataProvider for TmdbClient {
                 "Title identifier cannot be empty.".to_string(),
             ));
         }
-        let episodes = self.mock_episode_results(title_id);
-        Ok(episodes
-            .into_iter()
-            .map(|episode| self.normalize_episode(episode))
-            .collect())
+        let details = self.fetch_tv_details(title_id)?;
+        if details.seasons.is_empty() {
+            return Err(MetadataError::NotFound(
+                "TMDB returned no seasons for this title.".to_string(),
+            ));
+        }
+        let mut episodes = Vec::new();
+        for season in details.seasons {
+            let season_details = self.fetch_season(title_id, season.season_number)?;
+            for episode in season_details.episodes {
+                episodes.push(self.normalize_episode(episode));
+            }
+        }
+        if episodes.is_empty() {
+            return Err(MetadataError::NotFound(
+                "TMDB returned no episodes for this title.".to_string(),
+            ));
+        }
+        Ok(episodes)
     }
 
     fn fetch_movie_details(&mut self, title_id: &str) -> Result<MovieMatch, MetadataError> {
@@ -192,7 +311,7 @@ impl MetadataProvider for TmdbClient {
                 "Title identifier cannot be empty.".to_string(),
             ));
         }
-        let details = self.mock_movie_details(title_id);
+        let details = self.fetch_movie(title_id)?;
         Ok(self.normalize_movie(details))
     }
 }

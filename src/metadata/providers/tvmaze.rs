@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::Duration;
 
 use serde::Deserialize;
 
@@ -17,6 +18,7 @@ struct TvMazeShow {
     id: u32,
     name: String,
     premiered: Option<String>,
+    #[serde(default)]
     score: f32,
 }
 
@@ -47,8 +49,98 @@ impl TvMazeClient {
         headers
     }
 
-    fn normalize_title(&self, show: TvMazeShow) -> TitleMatch {
-        let source_score = show.score;
+    fn http_client(&self) -> Result<reqwest::blocking::Client, MetadataError> {
+        reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .map_err(|err| MetadataError::Network(format!("Failed to build HTTP client: {err}")))
+    }
+
+    fn headers(&self) -> Result<reqwest::header::HeaderMap, MetadataError> {
+        if self.user_agent.trim().is_empty() {
+            return Err(MetadataError::Other(
+                "TVmaze user agent is not configured.".to_string(),
+            ));
+        }
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            reqwest::header::ACCEPT,
+            "application/json".parse().map_err(|err| {
+                MetadataError::Other(format!("Invalid TVmaze accept header: {err}"))
+            })?,
+        );
+        headers.insert(
+            reqwest::header::USER_AGENT,
+            self.user_agent.parse().map_err(|err| {
+                MetadataError::Other(format!("Invalid TVmaze user agent header: {err}"))
+            })?,
+        );
+        Ok(headers)
+    }
+
+    fn get_json<T: for<'de> Deserialize<'de>>(
+        &self,
+        path: &str,
+        query: &[(&str, &str)],
+    ) -> Result<T, MetadataError> {
+        let client = self.http_client()?;
+        let url = format!("{}{}", self.base_url, path);
+        let response = client
+            .get(url)
+            .headers(self.headers()?)
+            .query(query)
+            .send()
+            .map_err(|err| {
+                if err.is_timeout() {
+                    MetadataError::Network("TVmaze request timed out.".to_string())
+                } else {
+                    MetadataError::Network(format!("TVmaze request failed: {err}"))
+                }
+            })?;
+        let status = response.status();
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Err(MetadataError::NotFound(
+                "TVmaze did not return any results.".to_string(),
+            ));
+        }
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            return Err(MetadataError::RateLimited(
+                "TVmaze rate limit exceeded.".to_string(),
+            ));
+        }
+        if !status.is_success() {
+            return Err(MetadataError::InvalidResponse(format!(
+                "TVmaze returned status {status}."
+            )));
+        }
+        response.json::<T>().map_err(|err| {
+            MetadataError::InvalidResponse(format!("Failed to parse TVmaze response: {err}"))
+        })
+    }
+
+    fn search_shows(&self, query: &str) -> Result<Vec<TvMazeSearchResult>, MetadataError> {
+        let response: Vec<TvMazeSearchResult> = self.get_json("/search/shows", &[("q", query)])?;
+        if response.is_empty() {
+            return Err(MetadataError::NotFound(
+                "TVmaze returned no matches.".to_string(),
+            ));
+        }
+        Ok(response)
+    }
+
+    fn fetch_episodes(&self, title_id: &str) -> Result<Vec<TvMazeEpisode>, MetadataError> {
+        let response: Vec<TvMazeEpisode> =
+            self.get_json(&format!("/shows/{title_id}/episodes"), &[])?;
+        if response.is_empty() {
+            return Err(MetadataError::NotFound(
+                "TVmaze returned no episodes.".to_string(),
+            ));
+        }
+        Ok(response)
+    }
+
+    fn normalize_title(&self, show: TvMazeShow, score: f32) -> TitleMatch {
+        let source_score = score;
         let source_trust = 0.75;
         let global_score = source_score * source_trust;
         TitleMatch {
@@ -96,23 +188,13 @@ impl TvMazeClient {
         }
     }
 
-    fn mock_search_results(&self, query: &str) -> Vec<TvMazeShow> {
-        vec![TvMazeShow {
-            id: 1,
-            name: query.to_string(),
-            premiered: None,
-            score: 0.78,
-        }]
-    }
+}
 
-    fn mock_episode_results(&self, _title_id: &str) -> Vec<TvMazeEpisode> {
-        vec![TvMazeEpisode {
-            id: 1,
-            season: 1,
-            number: 1,
-            name: "Pilot".to_string(),
-        }]
-    }
+#[derive(Debug, Clone, Deserialize)]
+struct TvMazeSearchResult {
+    #[serde(default)]
+    score: f32,
+    show: TvMazeShow,
 }
 
 impl MetadataProvider for TvMazeClient {
@@ -122,10 +204,17 @@ impl MetadataProvider for TvMazeClient {
                 "Search query cannot be empty.".to_string(),
             ));
         }
-        let results = self.mock_search_results(query);
+        let results = self.search_shows(query)?;
         Ok(results
             .into_iter()
-            .map(|show| self.normalize_title(show))
+            .map(|result| {
+                let score = if result.score > 0.0 {
+                    result.score
+                } else {
+                    result.show.score
+                };
+                self.normalize_title(result.show, score)
+            })
             .collect())
     }
 
@@ -135,7 +224,7 @@ impl MetadataProvider for TvMazeClient {
                 "Title identifier cannot be empty.".to_string(),
             ));
         }
-        let episodes = self.mock_episode_results(title_id);
+        let episodes = self.fetch_episodes(title_id)?;
         Ok(episodes
             .into_iter()
             .map(|episode| self.normalize_episode(episode))
@@ -161,7 +250,7 @@ mod tests {
         ));
         let show: TvMazeShow = serde_json::from_str(payload).expect("fixture should parse");
         let client = TvMazeClient::new("kayabot-test");
-        let normalized = client.normalize_title(show);
+        let normalized = client.normalize_title(show.clone(), show.score);
 
         assert_eq!(normalized.id, "123");
         assert_eq!(normalized.name, "Example Show");
