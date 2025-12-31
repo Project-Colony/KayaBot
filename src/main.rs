@@ -484,7 +484,7 @@ impl RenameApp {
                 |_, ui| {
                     ui.add_space(6.0);
                 },
-                |_, ui| {
+                |app, ui| {
                     ui.horizontal(|ui| {
                         let move_down_clicked = ui
                             .add_sized(Vec2::new(32.0, 26.0), Button::new("⬇"))
