@@ -16,7 +16,7 @@ use metadata::providers::{
     tvmaze::TvMazeClient,
 };
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     env, fs,
     path::{Path, PathBuf},
 };
@@ -92,6 +92,8 @@ struct RenameApp {
     selected_title_id: Option<String>,
     episode_matches: Vec<EpisodeMatch>,
     show_match_picker: bool,
+    match_picker_file_index: Option<usize>,
+    manual_overrides: HashMap<String, ManualOverride>,
     rename_feedback_message: Option<String>,
     rename_dry_run: bool,
     rename_summaries: Vec<RenameSummary>,
@@ -155,6 +157,8 @@ impl Default for RenameApp {
             selected_title_id: None,
             episode_matches: Vec::new(),
             show_match_picker: false,
+            match_picker_file_index: None,
+            manual_overrides: HashMap::new(),
             rename_feedback_message: None,
             rename_dry_run: false,
             rename_summaries: Vec::new(),
@@ -324,7 +328,19 @@ impl RenameApp {
         self.apply_content_detection();
         self.rename_feedback_message = None;
         self.rename_summaries.clear();
+        self.prune_manual_overrides();
         self.refresh_rename_ui_state();
+    }
+
+    fn prune_manual_overrides(&mut self) {
+        let valid_files: HashSet<String> = self.original_files.iter().cloned().collect();
+        self.manual_overrides
+            .retain(|original, _| valid_files.contains(original));
+        if let Some(index) = self.match_picker_file_index {
+            if index >= self.original_files.len() {
+                self.match_picker_file_index = None;
+            }
+        }
     }
 
     fn move_selected_file_up(&mut self) {
@@ -589,7 +605,13 @@ impl RenameApp {
                             .add_sized(Vec2::new(32.0, 26.0), Button::new("🔧"))
                             .clicked();
                         if adjust_clicked {
-                            app.show_match_picker = true;
+                            if app.selected_file_index.is_none()
+                                && !app.original_files.is_empty()
+                            {
+                                app.selected_file_index = Some(0);
+                            }
+                            app.match_picker_file_index = app.selected_file_index;
+                            app.show_match_picker = app.selected_file_index.is_some();
                         }
                     });
                 },
@@ -1156,6 +1178,7 @@ environment variables.",
 
         if !self.rename_dry_run {
             self.original_files = updated_files;
+            self.manual_overrides.clear();
             self.match_results = matching::match_files(&self.original_files);
             self.apply_content_detection();
         }
@@ -1789,58 +1812,193 @@ environment variables.",
 
     fn match_picker_window(&mut self, ctx: &egui::Context) {
         let mut open = self.show_match_picker;
-        let mut close_window = false;
-        egui::Window::new("Adjust Title Match")
+        egui::Window::new("Ajuster le match")
             .open(&mut open)
             .show(ctx, |ui| {
-                if self.title_matches.is_empty() {
-                    ui.label("Fetch data first to see matches.");
+                let Some(file_index) = self
+                    .match_picker_file_index
+                    .or(self.selected_file_index)
+                else {
+                    ui.label("Sélectionnez un fichier pour ajuster le match.");
                     return;
-                }
+                };
+                let Some(file_name) = self.original_files.get(file_index) else {
+                    ui.label("Fichier introuvable.");
+                    return;
+                };
+                ui.label(RichText::new(format!("Fichier: {file_name}")).strong());
+                ui.add_space(6.0);
 
                 let mut selected_id = None;
                 let mut should_fetch = false;
-                let mut should_close = false;
-                ui.horizontal(|ui| {
-                    ui.vertical(|ui| {
-                        for title in &self.title_matches {
-                            let label = self.format_title_match_summary(title);
-                            let selected = self.selected_title_id.as_deref() == Some(&title.id);
-                            if ui.selectable_label(selected, label).clicked() {
-                                selected_id = Some(title.id.clone());
-                                should_fetch = self.content_type == ContentType::Series;
-                                should_close = true;
+                if self.title_matches.is_empty() {
+                    ui.label("Fetch data first to see matches.");
+                } else {
+                    ui.horizontal(|ui| {
+                        ui.vertical(|ui| {
+                            ui.label(RichText::new("Matches disponibles").strong());
+                            ui.add_space(4.0);
+                            for title in &self.title_matches {
+                                let label = self.format_title_match_summary(title);
+                                let selected =
+                                    self.selected_title_id.as_deref() == Some(&title.id);
+                                if ui.selectable_label(selected, label).clicked() {
+                                    selected_id = Some(title.id.clone());
+                                    should_fetch = self.content_type == ContentType::Series;
+                                    let mut override_entry = self
+                                        .manual_overrides
+                                        .get(file_name)
+                                        .cloned()
+                                        .unwrap_or_default();
+                                    override_entry.title = Some(title.name.clone());
+                                    self.set_manual_override(file_name, override_entry);
+                                }
                             }
-                        }
+                        });
+                        ui.separator();
+                        ui.vertical(|ui| {
+                            let palette = self.theme_palette();
+                            ui.label(RichText::new("Source détaillée").strong());
+                            ui.add_space(4.0);
+                            if let Some(title) = self.selected_title_match() {
+                                self.render_title_match_details(ui, title);
+                            } else {
+                                ui.label(
+                                    RichText::new("Sélectionnez un match.")
+                                        .color(palette.subtext0),
+                                );
+                            }
+                            if self.content_type == ContentType::Series {
+                                ui.add_space(10.0);
+                                ui.label(RichText::new("Épisodes").strong());
+                                if self.episode_matches.is_empty() {
+                                    ui.label(
+                                        RichText::new("Aucun épisode chargé.")
+                                            .color(palette.subtext0),
+                                    );
+                                } else {
+                                    ScrollArea::vertical()
+                                        .max_height(160.0)
+                                        .show(ui, |ui| {
+                                            let current_override = self
+                                                .manual_override_for(file_name)
+                                                .cloned()
+                                                .unwrap_or_default();
+                                            for episode in &self.episode_matches {
+                                                let label = format!(
+                                                    "S{:02}E{:02} - {}",
+                                                    episode.season, episode.episode, episode.title
+                                                );
+                                                let selected = current_override.season
+                                                    == Some(episode.season)
+                                                    && current_override.episode
+                                                        == Some(episode.episode);
+                                                if ui.selectable_label(selected, label).clicked()
+                                                {
+                                                    let mut override_entry = current_override.clone();
+                                                    override_entry.season =
+                                                        Some(episode.season);
+                                                    override_entry.episode =
+                                                        Some(episode.episode);
+                                                    if override_entry.title.is_none() {
+                                                        if let Some(title) =
+                                                            self.selected_title_match()
+                                                        {
+                                                            override_entry.title =
+                                                                Some(title.name.clone());
+                                                        }
+                                                    }
+                                                    self.set_manual_override(
+                                                        file_name,
+                                                        override_entry,
+                                                    );
+                                                }
+                                            }
+                                        });
+                                }
+                            }
+                        });
                     });
-                    ui.separator();
-                    ui.vertical(|ui| {
-                        let palette = self.theme_palette();
-                        ui.label(RichText::new("Source détaillée").strong());
-                        ui.add_space(4.0);
-                        if let Some(title) = self.selected_title_match() {
-                            self.render_title_match_details(ui, title);
-                        } else {
-                            ui.label(
-                                RichText::new("Sélectionnez un match.").color(palette.subtext0),
-                            );
-                        }
-                    });
-                });
+                }
                 if let Some(selected_id) = selected_id {
                     self.selected_title_id = Some(selected_id);
                     if should_fetch {
                         self.fetch_episodes();
                     }
                 }
-                if should_close {
-                    close_window = true;
+
+                ui.add_space(8.0);
+                ui.separator();
+                ui.add_space(6.0);
+                ui.label(RichText::new("Override manuel").strong());
+                let palette = self.theme_palette();
+                let current_override = self
+                    .manual_override_for(file_name)
+                    .cloned()
+                    .unwrap_or_default();
+                let mut title_input = current_override.title.unwrap_or_default();
+                let mut season_input = current_override
+                    .season
+                    .map(|value| value.to_string())
+                    .unwrap_or_default();
+                let mut episode_input = current_override
+                    .episode
+                    .map(|value| value.to_string())
+                    .unwrap_or_default();
+                let mut override_changed = false;
+                ui.horizontal(|ui| {
+                    ui.label("Titre");
+                    override_changed |= ui.text_edit_singleline(&mut title_input).changed();
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Saison");
+                    override_changed |= ui.text_edit_singleline(&mut season_input).changed();
+                    ui.label("Épisode");
+                    override_changed |= ui.text_edit_singleline(&mut episode_input).changed();
+                });
+
+                let season_value = if season_input.trim().is_empty() {
+                    None
+                } else {
+                    season_input.trim().parse::<u32>().ok()
+                };
+                let episode_value = if episode_input.trim().is_empty() {
+                    None
+                } else {
+                    episode_input.trim().parse::<u32>().ok()
+                };
+                let invalid_season = !season_input.trim().is_empty() && season_value.is_none();
+                let invalid_episode = !episode_input.trim().is_empty() && episode_value.is_none();
+                if override_changed && !invalid_season && !invalid_episode {
+                    let title_value = if title_input.trim().is_empty() {
+                        None
+                    } else {
+                        Some(title_input.trim().to_string())
+                    };
+                    self.set_manual_override(
+                        file_name,
+                        ManualOverride {
+                            title: title_value,
+                            season: season_value,
+                            episode: episode_value,
+                        },
+                    );
+                }
+                if invalid_season || invalid_episode {
+                    ui.label(
+                        RichText::new("Saison/épisode invalide.")
+                            .size(10.0)
+                            .color(palette.warning),
+                    );
+                }
+                if ui.button("Effacer l'override").clicked() {
+                    self.manual_overrides.remove(file_name);
                 }
             });
-        if close_window {
-            open = false;
-        }
         self.show_match_picker = open;
+        if !open {
+            self.match_picker_file_index = None;
+        }
     }
 
     fn new_names_rows(&self) -> Vec<NewNameRow> {
@@ -1976,8 +2134,82 @@ environment variables.",
         }
     }
 
+    fn manual_override_for(&self, original: &str) -> Option<&ManualOverride> {
+        self.manual_overrides.get(original)
+    }
+
+    fn set_manual_override(&mut self, original: &str, override_entry: ManualOverride) {
+        if override_entry.is_empty() {
+            self.manual_overrides.remove(original);
+        } else {
+            self.manual_overrides
+                .insert(original.to_string(), override_entry);
+        }
+    }
+
     fn format_preview(&self, result: &matching::MatchResult) -> String {
         let detected = self.detected_series_name.trim();
+        if let Some(override_entry) = self.manual_override_for(&result.original) {
+            let override_title = override_entry
+                .title
+                .as_deref()
+                .map(str::trim)
+                .filter(|title| !title.is_empty());
+            let title_fallback = result
+                .title_match
+                .as_ref()
+                .map(|title| title.name.as_str())
+                .or_else(|| (!detected.is_empty()).then_some(detected))
+                .or_else(|| {
+                    result.metadata.as_ref().and_then(|metadata| match metadata {
+                        matching::MatchMetadata::Episode { series_title, .. } => {
+                            series_title.as_deref()
+                        }
+                        matching::MatchMetadata::Series { title } => title.as_deref(),
+                        _ => None,
+                    })
+                });
+            let title = override_title.or(title_fallback);
+            let year = result
+                .title_match
+                .as_ref()
+                .and_then(|title| title.year.map(u32::from));
+            let episode_hint = result
+                .episode_match
+                .as_ref()
+                .map(|episode| (episode.season, episode.episode))
+                .or_else(|| self.episode_hint(result));
+            let has_episode = override_entry.season.is_some()
+                || override_entry.episode.is_some()
+                || episode_hint.is_some();
+            if has_episode {
+                let (fallback_season, fallback_episode) = episode_hint.unwrap_or((1, 1));
+                let season = override_entry.season.unwrap_or(fallback_season);
+                let episode = override_entry.episode.unwrap_or(fallback_episode);
+                return formatting::format_series_name(
+                    SeriesFormatInput {
+                        series: title.unwrap_or("Unknown Series"),
+                        season,
+                        episode,
+                        title: result.episode_match.as_ref().map(|episode| episode.title.as_str()),
+                        year,
+                    },
+                    self.format_options.clone(),
+                );
+            }
+            if let Some(override_title) = override_title {
+                if self.content_type == ContentType::Movie {
+                    return formatting::format_movie_name(
+                        MovieFormatInput {
+                            title: override_title,
+                            year,
+                        },
+                        self.format_options.clone(),
+                    );
+                }
+                return override_title.to_string();
+            }
+        }
         if let Some(episode_match) = &result.episode_match {
             let series_name = result
                 .title_match
@@ -2631,6 +2863,24 @@ trait ListItem {
     fn render(&self, app: &mut RenameApp, ui: &mut egui::Ui);
 }
 
+#[derive(Debug, Clone, Default)]
+struct ManualOverride {
+    title: Option<String>,
+    season: Option<u32>,
+    episode: Option<u32>,
+}
+
+impl ManualOverride {
+    fn is_empty(&self) -> bool {
+        self.title
+            .as_ref()
+            .map(|title| title.trim().is_empty())
+            .unwrap_or(true)
+            && self.season.is_none()
+            && self.episode.is_none()
+    }
+}
+
 struct OriginalFileRow {
     index: usize,
     name: String,
@@ -2641,6 +2891,8 @@ impl ListItem for OriginalFileRow {
         let selected = app.selected_file_index == Some(self.index);
         if ui.selectable_label(selected, &self.name).clicked() {
             app.selected_file_index = Some(self.index);
+            app.match_picker_file_index = Some(self.index);
+            app.show_match_picker = true;
         }
     }
 }
