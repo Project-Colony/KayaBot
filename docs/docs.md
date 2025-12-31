@@ -150,17 +150,26 @@ Ce mapping décrit les correspondances minimales à appliquer lors de l'impléme
 - Aucun test automatisé n'est encore défini.
 - Ajouter des tests unitaires sur le parsing/formatage est prioritaire pour stabiliser le MVP.
 
-## Configuration (placeholders)
+## Configuration
 
-Les clés d'API et identifiants sont documentés via `.env.example` (à copier en `.env` si besoin). Aucune lecture d'env n'est encore implémentée côté code, mais les variables suivantes sont prévues :
+Les clés API peuvent être définies dans le fichier
+`~/.config/Colony/KayaBot/config.toml` ou via des variables d’environnement
+(les variables d’environnement ont priorité sur le fichier).
 
-- `KAYABOT_TMDB_API_KEY`
-- `KAYABOT_TMDB_BEARER_TOKEN`
+Exemple de configuration :
+
+```toml
+tmdb_bearer_token = "..."
+tvdb_api_key = "..."
+omdb_api_key = "..."
+anidb_api_key = "..."
+tvmaze_user_agent = "KayaBot"
+```
+
+Variables d’environnement supportées :
+
+- `KAYABOT_TMDB_BEARER_TOKEN` (ou `KAYABOT_TMDB_API_KEY`)
 - `KAYABOT_TVDB_API_KEY`
-- `KAYABOT_TVDB_PIN`
-- `KAYABOT_TVMAZE_API_KEY`
 - `KAYABOT_OMDB_API_KEY`
-- `KAYABOT_ANIDB_USERNAME`
-- `KAYABOT_ANIDB_PASSWORD`
-- `KAYABOT_ANIDB_CLIENT_NAME`
-- `KAYABOT_ANIDB_CLIENT_VERSION`
+- `KAYABOT_ANIDB_PASSWORD` (ou `KAYABOT_ANIDB_API_KEY`)
+- `KAYABOT_TVMAZE_USER_AGENT` (ou `KAYABOT_TVMAZE_API_KEY`)
