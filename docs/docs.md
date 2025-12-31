@@ -45,13 +45,16 @@ Formats finaux (et fallbacks) :
 ### Métadonnées
 
 - `src/metadata/provider.rs` définit l'interface `MetadataProvider` et l'énumération `MetadataSource`.
-- `src/metadata/filebot_like.rs` fournit un provider en mémoire (dataset vide par défaut) et un cache local (`MetadataCache`).
+- `src/metadata/aggregate.rs` implémente `MetadataPipeline`, qui orchestre plusieurs providers et agrège les résultats.
+- Les clients réels sont dans `src/metadata/providers/` (`tmdb.rs`, `thetvdb.rs`, `tvmaze.rs`, `omdb.rs`, `anidb.rs`).
+- `src/metadata/filebot_like.rs` reste un provider en mémoire avec cache local (`MetadataCache`), utile pour le mock et l'outillage.
 - `src/metadata/models.rs` définit les types `TitleMatch`, `MovieMatch`, `EpisodeMatch` ainsi que les modèles normalisés (`NormalizedTitle`, `NormalizedEpisode`).
 
 #### Stratégie de sélection des sources
 
 - Séries : TheTVDB en source primaire, TVmaze en fallback si aucune réponse.
 - Films : TheMovieDB (TMDB) en source primaire, OMDb en fallback si aucune réponse.
+- L'app peut forcer une source unique (option "Forcer la source"), sinon elle conserve une liste active (source principale + fallbacks).
 
 #### Attributs attendus par source (normalisés)
 
@@ -142,19 +145,24 @@ Ce mapping décrit les correspondances minimales à appliquer lors de l'impléme
 
 1. L'utilisateur charge une liste de fichiers (UI en cours d'intégration).
 2. "Match" applique le parsing heuristique et alimente les suggestions.
-3. "Fetch Data" interroge le provider de métadonnées (actuellement stub).
+3. "Fetch Data" interroge les providers actifs (TMDB/TheTVDB/TVmaze/OMDb/AniDB).
 4. "Rename" simule le renommage et affiche un bilan.
 
 ## Tests & validation
 
-- Aucun test automatisé n'est encore défini.
-- Ajouter des tests unitaires sur le parsing/formatage est prioritaire pour stabiliser le MVP.
+- Des tests unitaires existent pour le formatage (voir `src/formatting/mod.rs`).
+- Étendre la couverture au parsing/matching reste prioritaire pour stabiliser le MVP.
 
 ## Configuration
 
 Les clés API peuvent être définies dans le fichier
-`~/.config/Colony/KayaBot/config.toml` ou via des variables d’environnement
-(les variables d’environnement ont priorité sur le fichier).
+`~/.config/Colony/KayaBot/api_keys.toml` ou via des variables d’environnement
+(les variables d’environnement ont priorité sur les fichiers).
+
+Le fichier `config.toml` est utilisé par l'application pour persister la file
+et les options de formatage. `preferences.toml` conserve les préférences UI
+(thème, langue/locale, densité, options d'expérience). `format_options.toml`
+contient le dernier template de formatage choisi.
 
 Exemple de configuration :
 

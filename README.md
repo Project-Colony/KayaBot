@@ -17,7 +17,8 @@ KayaBot est une application desktop Rust (eframe/egui) visant à proposer un out
 - UI de renommage avec panneaux "Original Files" / "New Names" et barre latérale.
 - Parsing heuristique des noms de fichiers (SxxExx, 1x02, année, etc.).
 - Prévisualisation des noms via formats par défaut (séries et films).
-- Sélecteur de source de métadonnées (enum), fournisseur en mémoire et cache.
+- Pipeline de métadonnées multi-sources (TMDB, TheTVDB, TVmaze, OMDb, AniDB) avec fallback.
+- Préférences utilisateur (thème, langue/locale, options d'expérience) persistées.
 
 ## Démarrage rapide
 
@@ -27,7 +28,9 @@ cargo run
 
 ## Setup
 
-Créez un fichier de configuration `~/.config/Colony/KayaBot/config.toml` pour stocker les clés API (ou utilisez les variables d’environnement). Les variables d’environnement ont priorité sur le fichier.
+Créez un fichier `~/.config/Colony/KayaBot/api_keys.toml` pour stocker les clés API (ou utilisez les variables d’environnement). Les variables d’environnement ont priorité sur les fichiers.
+
+Le fichier `config.toml` du même dossier est utilisé par l'application pour persister la file d'attente et les options de formatage. Préférez donc `api_keys.toml` pour les secrets afin d'éviter les écrasements.
 
 Exemple de config :
 
