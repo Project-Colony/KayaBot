@@ -2,8 +2,10 @@ use std::collections::HashSet;
 
 #[derive(Debug, Clone)]
 pub struct NormalizedName {
+    #[allow(dead_code)]
     pub original: String,
     pub normalized: String,
+    #[allow(dead_code)]
     pub tokens: Vec<String>,
     pub season: Option<u32>,
     pub episode: Option<u32>,
@@ -14,9 +16,12 @@ pub struct NormalizedName {
 
 #[derive(Debug, Clone)]
 pub struct RankedCandidate {
+    #[allow(dead_code)]
     pub original: String,
+    #[allow(dead_code)]
     pub normalized: String,
     pub score: f32,
+    #[allow(dead_code)]
     pub justification: Vec<String>,
 }
 
