@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::Duration;
 
 use serde::Deserialize;
 
@@ -14,24 +15,32 @@ pub struct TheTvDbClient {
 
 #[derive(Debug, Clone, Deserialize)]
 struct TheTvDbSeries {
+    #[serde(alias = "tvdb_id")]
     id: String,
     name: String,
+    #[serde(default)]
     year: Option<u16>,
+    #[serde(default, alias = "score")]
     score: f32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 struct TheTvDbEpisode {
     id: String,
+    #[serde(rename = "season", alias = "seasonNumber", alias = "season_number")]
     season: u32,
+    #[serde(rename = "episode", alias = "number", alias = "episodeNumber")]
     episode: u32,
     name: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 struct TheTvDbMovieDetails {
+    #[serde(alias = "movie_id")]
     id: String,
+    #[serde(alias = "name")]
     title: String,
+    #[serde(default)]
     year: Option<u16>,
 }
 
@@ -55,6 +64,120 @@ impl TheTvDbClient {
         );
         headers.insert("Accept".to_string(), "application/json".to_string());
         headers
+    }
+
+    fn http_client(&self) -> Result<reqwest::blocking::Client, MetadataError> {
+        reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .map_err(|err| MetadataError::Network(format!("Failed to build HTTP client: {err}")))
+    }
+
+    fn headers(&self) -> Result<reqwest::header::HeaderMap, MetadataError> {
+        if self.api_key.trim().is_empty() {
+            return Err(MetadataError::Other(
+                "TheTVDB API key is not configured.".to_string(),
+            ));
+        }
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            reqwest::header::AUTHORIZATION,
+            format!("Bearer {}", self.api_key)
+                .parse()
+                .map_err(|err| {
+                    MetadataError::Other(format!("Invalid TheTVDB auth header: {err}"))
+                })?,
+        );
+        headers.insert(
+            reqwest::header::ACCEPT,
+            "application/json".parse().map_err(|err| {
+                MetadataError::Other(format!("Invalid TheTVDB accept header: {err}"))
+            })?,
+        );
+        Ok(headers)
+    }
+
+    fn get_json<T: for<'de> Deserialize<'de>>(
+        &self,
+        path: &str,
+        query: &[(&str, &str)],
+    ) -> Result<T, MetadataError> {
+        let client = self.http_client()?;
+        let url = format!("{}{}", self.base_url, path);
+        let response = client
+            .get(url)
+            .headers(self.headers()?)
+            .query(query)
+            .send()
+            .map_err(|err| {
+                if err.is_timeout() {
+                    MetadataError::Network("TheTVDB request timed out.".to_string())
+                } else {
+                    MetadataError::Network(format!("TheTVDB request failed: {err}"))
+                }
+            })?;
+        let status = response.status();
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Err(MetadataError::NotFound(
+                "TheTVDB did not return any results.".to_string(),
+            ));
+        }
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            return Err(MetadataError::RateLimited(
+                "TheTVDB rate limit exceeded.".to_string(),
+            ));
+        }
+        if !status.is_success() {
+            return Err(MetadataError::InvalidResponse(format!(
+                "TheTVDB returned status {status}."
+            )));
+        }
+        response.json::<T>().map_err(|err| {
+            MetadataError::InvalidResponse(format!("Failed to parse TheTVDB response: {err}"))
+        })
+    }
+
+    fn search_series(&self, query: &str) -> Result<Vec<TheTvDbSeries>, MetadataError> {
+        #[derive(Deserialize)]
+        struct SearchResponse {
+            data: Option<Vec<TheTvDbSeries>>,
+        }
+        let response: SearchResponse =
+            self.get_json("/search", &[("query", query), ("type", "series")])?;
+        let results = response.data.unwrap_or_default();
+        if results.is_empty() {
+            return Err(MetadataError::NotFound(
+                "TheTVDB returned no matches.".to_string(),
+            ));
+        }
+        Ok(results)
+    }
+
+    fn fetch_episodes(&self, title_id: &str) -> Result<Vec<TheTvDbEpisode>, MetadataError> {
+        #[derive(Deserialize)]
+        struct EpisodeResponse {
+            data: Option<Vec<TheTvDbEpisode>>,
+        }
+        let response: EpisodeResponse =
+            self.get_json(&format!("/series/{title_id}/episodes"), &[])?;
+        let episodes = response.data.unwrap_or_default();
+        if episodes.is_empty() {
+            return Err(MetadataError::NotFound(
+                "TheTVDB returned no episodes.".to_string(),
+            ));
+        }
+        Ok(episodes)
+    }
+
+    fn fetch_movie(&self, title_id: &str) -> Result<TheTvDbMovieDetails, MetadataError> {
+        #[derive(Deserialize)]
+        struct MovieResponse {
+            data: Option<TheTvDbMovieDetails>,
+        }
+        let response: MovieResponse = self.get_json(&format!("/movies/{title_id}"), &[])?;
+        response.data.ok_or_else(|| {
+            MetadataError::NotFound("TheTVDB returned no movie details.".to_string())
+        })
     }
 
     fn normalize_title(&self, series: TheTvDbSeries) -> TitleMatch {
@@ -124,31 +247,6 @@ impl TheTvDbClient {
         }
     }
 
-    fn mock_search_results(&self, query: &str) -> Vec<TheTvDbSeries> {
-        vec![TheTvDbSeries {
-            id: "tvdb-1".to_string(),
-            name: query.to_string(),
-            year: None,
-            score: 0.87,
-        }]
-    }
-
-    fn mock_episode_results(&self, _title_id: &str) -> Vec<TheTvDbEpisode> {
-        vec![TheTvDbEpisode {
-            id: "tvdb-ep-1".to_string(),
-            season: 1,
-            episode: 1,
-            name: "Pilot".to_string(),
-        }]
-    }
-
-    fn mock_movie_details(&self, title_id: &str) -> TheTvDbMovieDetails {
-        TheTvDbMovieDetails {
-            id: title_id.to_string(),
-            title: "Example Movie".to_string(),
-            year: None,
-        }
-    }
 }
 
 impl MetadataProvider for TheTvDbClient {
@@ -158,7 +256,7 @@ impl MetadataProvider for TheTvDbClient {
                 "Search query cannot be empty.".to_string(),
             ));
         }
-        let results = self.mock_search_results(query);
+        let results = self.search_series(query)?;
         Ok(results
             .into_iter()
             .map(|series| self.normalize_title(series))
@@ -171,7 +269,7 @@ impl MetadataProvider for TheTvDbClient {
                 "Title identifier cannot be empty.".to_string(),
             ));
         }
-        let episodes = self.mock_episode_results(title_id);
+        let episodes = self.fetch_episodes(title_id)?;
         Ok(episodes
             .into_iter()
             .map(|episode| self.normalize_episode(episode))
@@ -184,7 +282,7 @@ impl MetadataProvider for TheTvDbClient {
                 "Title identifier cannot be empty.".to_string(),
             ));
         }
-        let details = self.mock_movie_details(title_id);
+        let details = self.fetch_movie(title_id)?;
         Ok(self.normalize_movie(details))
     }
 }
