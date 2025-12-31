@@ -1,4 +1,7 @@
 mod metadata;
+mod paths {
+    pub use kayabot::paths::*;
+}
 
 use std::fs;
 use std::path::PathBuf;
