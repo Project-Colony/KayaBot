@@ -44,3 +44,10 @@ Les labels affichés dans l'UI proviennent de `MetadataSource::label` :
 - **Films** : TheMovieDB.
 
 Ces valeurs sont initialisées dans l'état de l'app (`RenameApp::default`) et mises à jour lors du changement de source.
+
+### Fallbacks et forçage
+
+- Par défaut, l'app active la source choisie **plus** ses fallbacks :
+  - Films : TMDB ↔ OMDb.
+  - Séries : TheTVDB ↔ TVmaze ↔ AniDB.
+- L'option "Forcer la source" limite les requêtes à la source active uniquement.
