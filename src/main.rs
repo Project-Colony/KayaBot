@@ -78,9 +78,7 @@ enum RenameResultStatus {
 #[derive(Debug, Clone)]
 struct RenameSummary {
     original: String,
-    proposed: String,
     resolved: String,
-    collision_adjusted: bool,
     outcome: RenameOutcome,
     result_status: RenameResultStatus,
     message: String,
@@ -1553,7 +1551,6 @@ api_keys.toml, then config.toml.",
         if !original_path.exists() {
             return self.build_rename_summary(
                 original,
-                preview,
                 original.to_string(),
                 false,
                 RenameOutcome::Failed("Fichier introuvable.".to_string()),
@@ -1566,7 +1563,6 @@ api_keys.toml, then config.toml.",
         {
             return self.build_rename_summary(
                 original,
-                preview,
                 original.to_string(),
                 false,
                 RenameOutcome::Skipped("Aucun nom proposé.".to_string()),
@@ -1582,7 +1578,6 @@ api_keys.toml, then config.toml.",
         if resolved_path == original_path {
             return self.build_rename_summary(
                 original,
-                preview,
                 resolved_string,
                 collision_adjusted,
                 RenameOutcome::Unchanged,
@@ -1592,7 +1587,6 @@ api_keys.toml, then config.toml.",
         if self.rename_dry_run {
             return self.build_rename_summary(
                 original,
-                preview,
                 resolved_string,
                 collision_adjusted,
                 RenameOutcome::DryRun,
@@ -1606,7 +1600,6 @@ api_keys.toml, then config.toml.",
                 }
                 self.build_rename_summary(
                     original,
-                    preview,
                     resolved_string,
                     collision_adjusted,
                     RenameOutcome::Renamed,
@@ -1614,7 +1607,6 @@ api_keys.toml, then config.toml.",
             }
             Err(err) => self.build_rename_summary(
                 original,
-                preview,
                 resolved_string,
                 collision_adjusted,
                 RenameOutcome::Failed(err),
@@ -1756,7 +1748,6 @@ api_keys.toml, then config.toml.",
     fn build_rename_summary(
         &self,
         original: &str,
-        proposed: String,
         resolved: String,
         collision_adjusted: bool,
         outcome: RenameOutcome,
@@ -1765,9 +1756,7 @@ api_keys.toml, then config.toml.",
         let result_status = Self::rename_result_status(&outcome);
         RenameSummary {
             original: original.to_string(),
-            proposed,
             resolved,
-            collision_adjusted,
             outcome,
             result_status,
             message,
@@ -3107,10 +3096,6 @@ impl ApiConfig {
     fn anidb_configured(&self) -> bool {
         !self.anidb_api_key.trim().is_empty()
     }
-
-    fn tvmaze_configured(&self) -> bool {
-        !self.tvmaze_user_agent.trim().is_empty()
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -4110,14 +4095,12 @@ mod tests {
         let mut app = RenameApp::default();
         let summary = app.build_rename_summary(
             "original.mkv",
-            "Preview Name".to_string(),
             "Final Name.mkv".to_string(),
             false,
             RenameOutcome::Renamed,
         );
         let skipped = app.build_rename_summary(
             "missing.mkv",
-            "Preview Missing".to_string(),
             "missing.mkv".to_string(),
             false,
             RenameOutcome::Skipped("Aucun nom proposé.".to_string()),

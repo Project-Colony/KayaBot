@@ -45,6 +45,7 @@ impl MetadataPipeline {
         }
     }
 
+    #[allow(dead_code)]
     pub fn set_sources(&mut self, primary: MetadataSource, secondary: Option<MetadataSource>) {
         let mut sources = vec![primary];
         if let Some(secondary) = secondary {

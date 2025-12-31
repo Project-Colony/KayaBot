@@ -3,7 +3,7 @@ mod parsing;
 
 use crate::metadata::models::{EpisodeMatch, TitleMatch};
 use serde::{Deserialize, Serialize};
-pub use advanced::{NormalizedName, RankedCandidate, normalize_name, rank_candidates};
+pub use advanced::rank_candidates;
 pub use parsing::{ParsedName, parse_filename};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -75,31 +75,6 @@ pub fn guess_content_type_for_result(result: &MatchResult) -> ContentGuess {
         match candidate {
             MatchMetadata::Series { .. } | MatchMetadata::Episode { .. } => series_count += 1,
             MatchMetadata::Movie { .. } => movie_count += 1,
-        }
-    }
-
-    if series_count > 0 && movie_count == 0 && !saw_ambiguous {
-        ContentGuess::Series
-    } else if movie_count > 0 && series_count == 0 && !saw_ambiguous {
-        ContentGuess::Movie
-    } else if series_count > 0 || movie_count > 0 || saw_ambiguous {
-        ContentGuess::Ambiguous
-    } else {
-        ContentGuess::Unknown
-    }
-}
-
-pub fn guess_content_type(results: &[MatchResult]) -> ContentGuess {
-    let mut series_count = 0;
-    let mut movie_count = 0;
-    let mut saw_ambiguous = false;
-
-    for result in results {
-        match result.candidates.as_slice() {
-            [MatchMetadata::Series { .. }] | [MatchMetadata::Episode { .. }] => series_count += 1,
-            [MatchMetadata::Movie { .. }] => movie_count += 1,
-            [] => {}
-            _ => saw_ambiguous = true,
         }
     }
 
