@@ -785,8 +785,13 @@ impl RenameApp {
                 ui.set_min_width(available_width);
                 ui.label(RichText::new("Menu").strong());
                 ui.add_space(6.0);
-                self.settings_section_button(ui, SettingsSection::Program, "🧰", "Program");
-                self.settings_section_button(ui, SettingsSection::Connections, "🔌", "Connexions");
+                self.settings_section_button(ui, SettingsSection::Program, "🧰", "Connections");
+                self.settings_section_button(
+                    ui,
+                    SettingsSection::Connections,
+                    "🔌",
+                    "API configuration",
+                );
                 self.settings_section_button(ui, SettingsSection::Language, "🌍", "Language");
                 self.settings_section_button(ui, SettingsSection::Appearance, "🎨", "Appearance");
                 self.settings_section_button(ui, SettingsSection::Experience, "✨", "Experience");
@@ -853,7 +858,7 @@ impl RenameApp {
 
     fn settings_program(&mut self, ui: &mut egui::Ui) -> bool {
         let mut changed = false;
-        ui.label(RichText::new("Program").font(FontId::proportional(18.0)));
+        ui.label(RichText::new("Connections").font(FontId::proportional(18.0)));
         ui.add_space(6.0);
         changed |= ui
             .checkbox(
@@ -884,7 +889,7 @@ impl RenameApp {
 
     fn settings_connections(&mut self, ui: &mut egui::Ui) -> bool {
         let palette = self.theme_palette();
-        ui.label(RichText::new("Connexions").font(FontId::proportional(18.0)));
+        ui.label(RichText::new("API configuration").font(FontId::proportional(18.0)));
         ui.add_space(6.0);
         ui.label(
             RichText::new(
@@ -920,17 +925,9 @@ api_keys.toml, then config.toml.",
             .num_columns(2)
             .spacing(Vec2::new(12.0, 6.0))
             .show(ui, |ui| {
-                ui.label("TMDB Bearer Token");
+                ui.label("TMDB API Key / Token");
                 ui.add(
                     TextEdit::singleline(&mut self.api_keys_form.tmdb_bearer_token)
-                        .password(true)
-                        .desired_width(240.0),
-                );
-                ui.end_row();
-
-                ui.label("TMDB API Key");
-                ui.add(
-                    TextEdit::singleline(&mut self.api_keys_form.tmdb_api_key)
                         .password(true)
                         .desired_width(240.0),
                 );
@@ -960,19 +957,6 @@ api_keys.toml, then config.toml.",
                 );
                 ui.end_row();
 
-                ui.label("AniDB Username");
-                ui.add(
-                    TextEdit::singleline(&mut self.api_keys_form.anidb_username)
-                        .desired_width(240.0),
-                );
-                ui.end_row();
-
-                ui.label("TVMaze User Agent");
-                ui.add(
-                    TextEdit::singleline(&mut self.api_keys_form.tvmaze_user_agent)
-                        .desired_width(240.0),
-                );
-                ui.end_row();
             });
 
         ui.add_space(8.0);
@@ -1041,12 +1025,6 @@ api_keys.toml, then config.toml.",
             "AniDB",
             self.api_config.anidb_configured(),
             "anidb_api_key",
-        );
-        self.settings_status_row(
-            ui,
-            "TVMaze",
-            self.api_config.tvmaze_configured(),
-            "tvmaze_user_agent",
         );
 
         false
