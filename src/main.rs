@@ -892,6 +892,15 @@ environment variables.",
             .size(11.0)
             .color(palette.subtext0),
         );
+        ui.label(
+            RichText::new(
+                "Supported config keys: tmdb_bearer_token or tmdb_api_key, \
+tvdb_api_key, omdb_api_key, anidb_password or anidb_api_key, tvmaze_user_agent \
+or tvmaze_api_key.",
+            )
+            .size(11.0)
+            .color(palette.subtext0),
+        );
         if let Some(path) = ApiConfig::config_path() {
             ui.label(
                 RichText::new(format!("Config path: {}", path.display()))
