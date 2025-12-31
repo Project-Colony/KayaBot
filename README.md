@@ -27,7 +27,7 @@ cargo run
 
 ## Setup
 
-Créez un fichier de configuration `~/.kayabot/config.toml` pour stocker les clés API (ou utilisez les variables d’environnement). Les variables d’environnement ont priorité sur le fichier.
+Créez un fichier de configuration `~/.config/Colony/KayaBot/config.toml` pour stocker les clés API (ou utilisez les variables d’environnement). Les variables d’environnement ont priorité sur le fichier.
 
 Exemple de config :
 
