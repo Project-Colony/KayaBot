@@ -116,6 +116,11 @@ impl TmdbClient {
                 }
             })?;
         let status = response.status();
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(MetadataError::Other(
+                "TMDB authorization failed. Check the configured API token.".to_string(),
+            ));
+        }
         if status == reqwest::StatusCode::NOT_FOUND {
             return Err(MetadataError::NotFound(
                 "TMDB did not return any results.".to_string(),
