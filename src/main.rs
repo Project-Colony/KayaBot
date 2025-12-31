@@ -1302,11 +1302,27 @@ environment variables.",
             if let Err(remove_err) = fs::remove_file(original) {
                 return Err(format!("Suppression impossible: {remove_err}"));
             }
-            if !matches!(err.kind(), std::io::ErrorKind::CrossDeviceLink) {
+            if !Self::is_cross_device_link(&err) {
                 eprintln!("Renommage direct échoué ({err}), copie + suppression appliquées.");
             }
         }
         Ok(())
+    }
+
+    fn is_cross_device_link(err: &std::io::Error) -> bool {
+        #[cfg(unix)]
+        {
+            err.raw_os_error() == Some(18)
+        }
+        #[cfg(windows)]
+        {
+            err.raw_os_error() == Some(17)
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            let _ = err;
+            false
+        }
     }
 
     fn rename_feedback_label(&self) -> String {
