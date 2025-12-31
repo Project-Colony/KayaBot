@@ -2,6 +2,7 @@ pub mod aggregate;
 pub mod cache;
 pub mod error;
 pub mod filebot_like;
+pub mod locale;
 pub mod models;
 pub mod provider;
 pub mod providers;

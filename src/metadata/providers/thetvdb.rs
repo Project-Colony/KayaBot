@@ -5,6 +5,7 @@ use serde::Deserialize;
 use serde::de::{self, Deserializer};
 
 use crate::metadata::error::MetadataError;
+use crate::metadata::locale::MetadataLocale;
 use crate::metadata::models::{EpisodeMatch, MovieMatch, TitleMatch};
 use crate::metadata::provider::MetadataProvider;
 
@@ -13,6 +14,7 @@ pub struct TheTvDbClient {
     api_key: String,
     base_url: String,
     token: Option<TheTvDbToken>,
+    locale: Option<MetadataLocale>,
 }
 
 #[derive(Debug, Clone)]
@@ -23,7 +25,11 @@ struct TheTvDbToken {
 
 #[derive(Debug, Clone, Deserialize)]
 struct TheTvDbSeries {
-    #[serde(alias = "tvdb_id", alias = "id", deserialize_with = "deserialize_string")]
+    #[serde(
+        alias = "tvdb_id",
+        alias = "id",
+        deserialize_with = "deserialize_string"
+    )]
     id: String,
     name: String,
     #[serde(default)]
@@ -46,7 +52,11 @@ struct TheTvDbEpisode {
 
 #[derive(Debug, Clone, Deserialize)]
 struct TheTvDbMovieDetails {
-    #[serde(alias = "movie_id", alias = "id", deserialize_with = "deserialize_string")]
+    #[serde(
+        alias = "movie_id",
+        alias = "id",
+        deserialize_with = "deserialize_string"
+    )]
     id: String,
     #[serde(alias = "name")]
     title: String,
@@ -65,11 +75,12 @@ struct TheTvDbTokenData {
 }
 
 impl TheTvDbClient {
-    pub fn new(api_key: impl Into<String>) -> Self {
+    pub fn new(api_key: impl Into<String>, locale: Option<MetadataLocale>) -> Self {
         Self {
             api_key: api_key.into(),
             base_url: "https://api4.thetvdb.com/v4".to_string(),
             token: None,
+            locale,
         }
     }
 
@@ -96,18 +107,13 @@ impl TheTvDbClient {
             .map_err(|err| MetadataError::Network(format!("Failed to build HTTP client: {err}")))
     }
 
-    fn headers_for_token(
-        &self,
-        token: &str,
-    ) -> Result<reqwest::header::HeaderMap, MetadataError> {
+    fn headers_for_token(&self, token: &str) -> Result<reqwest::header::HeaderMap, MetadataError> {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
             reqwest::header::AUTHORIZATION,
-            format!("Bearer {}", token)
-                .parse()
-                .map_err(|err| {
-                    MetadataError::Other(format!("Invalid TheTVDB auth header: {err}"))
-                })?,
+            format!("Bearer {}", token).parse().map_err(|err| {
+                MetadataError::Other(format!("Invalid TheTVDB auth header: {err}"))
+            })?,
         );
         headers.insert(
             reqwest::header::ACCEPT,
@@ -116,6 +122,19 @@ impl TheTvDbClient {
             })?,
         );
         Ok(headers)
+    }
+
+    fn build_query(&self, query: &[(String, String)]) -> Vec<(String, String)> {
+        let mut merged = query.to_vec();
+        if let Some(locale) = &self.locale {
+            if let Some(language) = locale.language.as_deref() {
+                merged.push(("language".to_string(), language.to_string()));
+            }
+            if let Some(region) = locale.region.as_deref() {
+                merged.push(("country".to_string(), region.to_string()));
+            }
+        }
+        merged
     }
 
     fn authenticate(&self) -> Result<TheTvDbToken, MetadataError> {
@@ -245,7 +264,7 @@ impl TheTvDbClient {
         let response = client
             .get(url)
             .headers(self.headers_for_token(&token_value)?)
-            .query(query)
+            .query(&self.build_query(query))
             .send()
             .map_err(|err| {
                 if err.is_timeout() {
@@ -354,8 +373,7 @@ impl TheTvDbClient {
         struct MovieResponse {
             data: Option<TheTvDbMovieDetails>,
         }
-        let response: MovieResponse =
-            self.get_json(&format!("/movies/{title_id}"), &[])?;
+        let response: MovieResponse = self.get_json(&format!("/movies/{title_id}"), &[])?;
         response.data.ok_or_else(|| {
             MetadataError::NotFound("TheTVDB returned no movie details.".to_string())
         })
@@ -427,7 +445,6 @@ impl TheTvDbClient {
             },
         }
     }
-
 }
 
 fn deserialize_string<'de, D>(deserializer: D) -> Result<String, D::Error>
@@ -492,7 +509,7 @@ mod tests {
             "/tests/fixtures/thetvdb_series.json"
         ));
         let series: TheTvDbSeries = serde_json::from_str(payload).expect("fixture should parse");
-        let client = TheTvDbClient::new("test-key");
+        let client = TheTvDbClient::new("test-key", None);
         let normalized = client.normalize_title(series);
 
         assert_eq!(normalized.id, "tvdb-99");

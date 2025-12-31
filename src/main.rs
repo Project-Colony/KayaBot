@@ -10,6 +10,7 @@ use formatting::{
 };
 use matching::ContentType;
 use metadata::aggregate::MetadataPipeline;
+use metadata::locale::MetadataLocale;
 use metadata::models::{EpisodeMatch, TitleMatch};
 use metadata::provider::{MetadataProvider, MetadataSource};
 use metadata::providers::{
@@ -196,8 +197,10 @@ impl Default for RenameApp {
         } else {
             RenameUiState::Success(match_results.len())
         };
+        let user_preferences = UserPreferences::load().unwrap_or_default();
         let (api_config, config_load_status) = ApiConfig::from_env();
-        let mut metadata_provider = Self::build_metadata_pipeline(&api_config);
+        let mut metadata_provider =
+            Self::build_metadata_pipeline(&api_config, user_preferences.metadata_locale());
         metadata_provider.set_active_sources(vec![
             MetadataSource::TheTvDb,
             MetadataSource::TvMaze,
@@ -232,7 +235,7 @@ impl Default for RenameApp {
             config_load_status,
             config_feedback_message: None,
             active_settings_section: SettingsSection::Program,
-            user_preferences: UserPreferences::load().unwrap_or_default(),
+            user_preferences,
             system_visuals: None,
         };
         if !app.match_results.is_empty() {
@@ -947,6 +950,7 @@ or tvmaze_api_key.",
 
     fn settings_language(&mut self, ui: &mut egui::Ui) -> bool {
         let mut changed = false;
+        let previous_locale = self.user_preferences.metadata_locale();
         ui.label(RichText::new("Language").font(FontId::proportional(18.0)));
         ui.add_space(6.0);
         let language_response = egui::ComboBox::from_id_source("settings_language")
@@ -981,6 +985,9 @@ or tvmaze_api_key.",
                 }
             });
         changed |= date_response.response.changed();
+        if previous_locale != self.user_preferences.metadata_locale() {
+            self.rebuild_metadata_provider();
+        }
         changed
     }
 
@@ -1056,6 +1063,7 @@ or tvmaze_api_key.",
 
     fn settings_utilities(&mut self, ui: &mut egui::Ui) -> bool {
         let mut changed = false;
+        let previous_locale = self.user_preferences.metadata_locale();
         ui.label(RichText::new("Utilities").font(FontId::proportional(18.0)));
         ui.add_space(6.0);
         changed |= ui
@@ -1087,6 +1095,9 @@ or tvmaze_api_key.",
             self.user_preferences = UserPreferences::default();
             changed = true;
         }
+        if previous_locale != self.user_preferences.metadata_locale() {
+            self.rebuild_metadata_provider();
+        }
         changed
     }
 
@@ -1117,11 +1128,17 @@ or tvmaze_api_key.",
         });
     }
 
-    fn build_metadata_pipeline(api_config: &ApiConfig) -> MetadataPipeline {
+    fn build_metadata_pipeline(
+        api_config: &ApiConfig,
+        locale: Option<MetadataLocale>,
+    ) -> MetadataPipeline {
         MetadataPipeline::new(vec![
             (
                 MetadataSource::TheMovieDb,
-                Box::new(TmdbClient::new(api_config.tmdb_token.clone())),
+                Box::new(TmdbClient::new(
+                    api_config.tmdb_token.clone(),
+                    locale.clone(),
+                )),
             ),
             (
                 MetadataSource::AniDb,
@@ -1129,7 +1146,7 @@ or tvmaze_api_key.",
             ),
             (
                 MetadataSource::TheTvDb,
-                Box::new(TheTvDbClient::new(api_config.tvdb_api_key.clone())),
+                Box::new(TheTvDbClient::new(api_config.tvdb_api_key.clone(), locale)),
             ),
             (
                 MetadataSource::TvMaze,
@@ -1143,12 +1160,17 @@ or tvmaze_api_key.",
     }
 
     fn reload_api_config(&mut self) {
-        let active_sources = self.metadata_provider.active_sources().to_vec();
-        let active_source = self.metadata_provider.active_source();
         let (api_config, config_load_status) = ApiConfig::from_env();
         self.api_config = api_config;
         self.config_load_status = config_load_status;
-        let mut metadata_provider = Self::build_metadata_pipeline(&self.api_config);
+        self.rebuild_metadata_provider();
+    }
+
+    fn rebuild_metadata_provider(&mut self) {
+        let active_sources = self.metadata_provider.active_sources().to_vec();
+        let active_source = self.metadata_provider.active_source();
+        let locale = self.user_preferences.metadata_locale();
+        let mut metadata_provider = Self::build_metadata_pipeline(&self.api_config, locale);
         if !active_sources.is_empty() {
             metadata_provider.set_active_sources(active_sources);
             metadata_provider.set_active_source(active_source);
@@ -3408,6 +3430,27 @@ impl UserPreferences {
 
     fn preferences_path() -> Option<PathBuf> {
         config_root().map(|root| root.join("preferences.toml"))
+    }
+
+    fn metadata_locale(&self) -> Option<MetadataLocale> {
+        let language = match self.language {
+            LanguageChoice::System => None,
+            LanguageChoice::English => Some("en".to_string()),
+            LanguageChoice::French => Some("fr".to_string()),
+            LanguageChoice::Spanish => Some("es".to_string()),
+        };
+        let region = match self.region {
+            RegionChoice::Auto => None,
+            RegionChoice::France => Some("FR".to_string()),
+            RegionChoice::UnitedStates => Some("US".to_string()),
+            RegionChoice::Japan => Some("JP".to_string()),
+        };
+        let locale = MetadataLocale { language, region };
+        if locale.is_empty() {
+            None
+        } else {
+            Some(locale)
+        }
     }
 }
 
