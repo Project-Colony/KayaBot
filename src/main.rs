@@ -62,6 +62,7 @@ struct RenameApp {
     active_left_nav: LeftNav,
     original_files: Vec<String>,
     match_results: Vec<matching::MatchResult>,
+    selected_file_index: Option<usize>,
     content_type: ContentType,
     detected_series_name: String,
     fetch_status: FetchStatus,
@@ -122,6 +123,7 @@ impl Default for RenameApp {
             active_left_nav: LeftNav::Rename,
             original_files,
             match_results,
+            selected_file_index: None,
             content_type: ContentType::Series,
             detected_series_name: String::new(),
             fetch_status: FetchStatus::Idle,
@@ -231,12 +233,9 @@ impl RenameApp {
         let mut added = false;
         for dropped in dropped_files {
             if let Some(path) = dropped.path {
-                if !path.is_file() {
-                    continue;
-                }
-                let path_string = path.display().to_string();
-                if !self.original_files.contains(&path_string) {
-                    self.original_files.push(path_string);
+                let mut paths = Vec::new();
+                self.collect_paths_from_input(&path, &mut paths);
+                if self.add_original_files(paths) {
                     added = true;
                 }
             } else if !dropped.name.is_empty() {
@@ -248,10 +247,126 @@ impl RenameApp {
         }
 
         if added {
-            self.match_results = matching::match_files(&self.original_files);
-            self.apply_content_detection();
-            self.rename_feedback = None;
-            self.refresh_rename_ui_state();
+            self.refresh_after_file_update();
+        }
+    }
+
+    fn collect_paths_from_input(&self, path: &std::path::Path, collected: &mut Vec<PathBuf>) {
+        if path.is_file() {
+            collected.push(path.to_path_buf());
+        } else if path.is_dir() {
+            self.collect_files_in_dir(path, collected);
+        }
+    }
+
+    fn collect_files_in_dir(&self, dir: &std::path::Path, collected: &mut Vec<PathBuf>) {
+        let entries = match fs::read_dir(dir) {
+            Ok(entries) => entries,
+            Err(_) => return,
+        };
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                collected.push(path);
+            } else if path.is_dir() {
+                self.collect_files_in_dir(&path, collected);
+            }
+        }
+    }
+
+    fn add_original_files<I>(&mut self, paths: I) -> bool
+    where
+        I: IntoIterator<Item = PathBuf>,
+    {
+        let mut added = false;
+        for path in paths {
+            let path_string = path.display().to_string();
+            if !self.original_files.contains(&path_string) {
+                self.original_files.push(path_string);
+                added = true;
+            }
+        }
+        if added {
+            self.selected_file_index = None;
+        }
+        added
+    }
+
+    fn refresh_after_file_update(&mut self) {
+        self.match_results = matching::match_files(&self.original_files);
+        self.apply_content_detection();
+        self.rename_feedback = None;
+        self.refresh_rename_ui_state();
+    }
+
+    fn move_selected_file_up(&mut self) {
+        let Some(index) = self.selected_file_index else {
+            return;
+        };
+        if index == 0 || index >= self.original_files.len() {
+            return;
+        }
+        self.original_files.swap(index, index - 1);
+        self.selected_file_index = Some(index - 1);
+        self.refresh_after_file_update();
+    }
+
+    fn move_selected_file_down(&mut self) {
+        let Some(index) = self.selected_file_index else {
+            return;
+        };
+        if index + 1 >= self.original_files.len() {
+            return;
+        }
+        self.original_files.swap(index, index + 1);
+        self.selected_file_index = Some(index + 1);
+        self.refresh_after_file_update();
+    }
+
+    fn delete_selected_file(&mut self) {
+        let Some(index) = self.selected_file_index else {
+            return;
+        };
+        if index >= self.original_files.len() {
+            return;
+        }
+        self.original_files.remove(index);
+        if self.original_files.is_empty() {
+            self.selected_file_index = None;
+        } else if index >= self.original_files.len() {
+            self.selected_file_index = Some(self.original_files.len() - 1);
+        }
+        self.refresh_after_file_update();
+    }
+
+    fn rescan_original_files(&mut self) {
+        self.original_files
+            .retain(|path| std::path::Path::new(path).exists());
+        if let Some(index) = self.selected_file_index {
+            if index >= self.original_files.len() {
+                self.selected_file_index = None;
+            }
+        }
+        self.refresh_after_file_update();
+    }
+
+    fn load_files_from_picker(&mut self) {
+        if let Some(files) = rfd::FileDialog::new().pick_files() {
+            if self.add_original_files(files) {
+                self.refresh_after_file_update();
+            }
+        }
+    }
+
+    fn load_folder_from_picker(&mut self) {
+        let Some(folder) = rfd::FileDialog::new().pick_folder() else {
+            return;
+        };
+        let mut collected = Vec::new();
+        self.collect_paths_from_input(&folder, &mut collected);
+        if self.add_original_files(collected) {
+            self.refresh_after_file_update();
         }
     }
     fn left_sidebar(&mut self, ui: &mut egui::Ui) {
@@ -319,13 +434,11 @@ impl RenameApp {
         ui.allocate_ui_with_layout(
             Vec2::new(available_width, ui.available_height()),
             Layout::top_down(egui::Align::Min),
-            |ui| {
-                match self.active_left_nav {
-                    LeftNav::Rename => self.rename_content(ctx, ui),
-                    LeftNav::Settings => self.settings_content(ui),
-                    LeftNav::Episodes | LeftNav::Subtitles | LeftNav::Sfv | LeftNav::Filter => {
-                        self.placeholder_content(ui)
-                    }
+            |ui| match self.active_left_nav {
+                LeftNav::Rename => self.rename_content(ctx, ui),
+                LeftNav::Settings => self.settings_content(ui),
+                LeftNav::Episodes | LeftNav::Subtitles | LeftNav::Sfv | LeftNav::Filter => {
+                    self.placeholder_content(ui)
                 }
             },
         );
@@ -350,7 +463,15 @@ impl RenameApp {
         ui.horizontal(|ui| {
             let left_width = (ui.available_width() - 120.0) * 0.5;
             let right_width = left_width;
-            let original_files = self.original_files.clone();
+            let original_files = self
+                .original_files
+                .iter()
+                .enumerate()
+                .map(|(index, name)| OriginalFileRow {
+                    index,
+                    name: name.clone(),
+                })
+                .collect::<Vec<_>>();
             let match_rows = self.new_names_rows();
 
             Self::list_panel(
@@ -365,11 +486,41 @@ impl RenameApp {
                 },
                 |_, ui| {
                     ui.horizontal(|ui| {
-                        ui.add_sized(Vec2::new(32.0, 26.0), Button::new("⬇"));
-                        ui.add_sized(Vec2::new(32.0, 26.0), Button::new("⬆"));
-                        ui.add_sized(Vec2::new(32.0, 26.0), Button::new("❌"));
-                        ui.add_sized(Vec2::new(70.0, 26.0), Button::new("📂 Load"));
-                        ui.add_sized(Vec2::new(32.0, 26.0), Button::new("🔄"));
+                        let move_down_clicked = ui
+                            .add_sized(Vec2::new(32.0, 26.0), Button::new("⬇"))
+                            .clicked();
+                        let move_up_clicked = ui
+                            .add_sized(Vec2::new(32.0, 26.0), Button::new("⬆"))
+                            .clicked();
+                        let delete_clicked = ui
+                            .add_sized(Vec2::new(32.0, 26.0), Button::new("❌"))
+                            .clicked();
+                        ui.menu_button("📂 Load", |ui| {
+                            if ui.button("Fichiers…").clicked() {
+                                app.load_files_from_picker();
+                                ui.close_menu();
+                            }
+                            if ui.button("Dossier…").clicked() {
+                                app.load_folder_from_picker();
+                                ui.close_menu();
+                            }
+                        });
+                        let refresh_clicked = ui
+                            .add_sized(Vec2::new(32.0, 26.0), Button::new("🔄"))
+                            .clicked();
+
+                        if move_down_clicked {
+                            app.move_selected_file_down();
+                        }
+                        if move_up_clicked {
+                            app.move_selected_file_up();
+                        }
+                        if delete_clicked {
+                            app.delete_selected_file();
+                        }
+                        if refresh_clicked {
+                            app.rescan_original_files();
+                        }
                     });
                 },
             );
@@ -795,7 +946,7 @@ environment variables.",
                                     .auto_shrink([false, false])
                                     .show(ui, |ui| {
                                         for item in items {
-                                            item.render(ui);
+                                            item.render(app, ui);
                                         }
                                     });
                             });
@@ -1212,8 +1363,7 @@ environment variables.",
                             self.render_title_match_details(ui, title);
                         } else {
                             ui.label(
-                                RichText::new("Sélectionnez un match.")
-                                    .color(palette.subtext0),
+                                RichText::new("Sélectionnez un match.").color(palette.subtext0),
                             );
                         }
                     });
@@ -1289,18 +1439,14 @@ environment variables.",
     fn rename_status_message(&self, ui: &mut egui::Ui) {
         let palette = self.theme_palette();
         let (message, color) = match &self.rename_ui_state {
-            RenameUiState::Loading => (
-                "Statut: chargement…".to_string(),
-                palette.accent,
-            ),
+            RenameUiState::Loading => ("Statut: chargement…".to_string(), palette.accent),
             RenameUiState::Success(count) => (
                 format!("Statut: succès — {count} résultat(s) prêts."),
                 palette.success,
             ),
-            RenameUiState::Error(message) => (
-                format!("Statut: erreur — {message}"),
-                palette.danger,
-            ),
+            RenameUiState::Error(message) => {
+                (format!("Statut: erreur — {message}"), palette.danger)
+            }
             RenameUiState::Empty => (
                 "Statut: aucun résultat pour le moment.".to_string(),
                 palette.subtext0,
@@ -1429,7 +1575,9 @@ environment variables.",
 
     fn selected_title_match(&self) -> Option<&TitleMatch> {
         let selected_id = self.selected_title_id.as_deref()?;
-        self.title_matches.iter().find(|title| title.id == selected_id)
+        self.title_matches
+            .iter()
+            .find(|title| title.id == selected_id)
     }
 
     fn render_title_match_details(&self, ui: &mut egui::Ui, title: &TitleMatch) {
@@ -1511,7 +1659,11 @@ impl ApiConfig {
         let config = ConfigFile::load();
         let tmdb_token = Self::env_value("KAYABOT_TMDB_BEARER_TOKEN")
             .or_else(|| Self::env_value("KAYABOT_TMDB_API_KEY"))
-            .or_else(|| config.as_ref().and_then(|cfg| cfg.tmdb_bearer_token.clone()))
+            .or_else(|| {
+                config
+                    .as_ref()
+                    .and_then(|cfg| cfg.tmdb_bearer_token.clone())
+            })
             .or_else(|| config.as_ref().and_then(|cfg| cfg.tmdb_api_key.clone()))
             .unwrap_or_default();
         let tvdb_api_key = Self::env_value("KAYABOT_TVDB_API_KEY")
@@ -1527,7 +1679,11 @@ impl ApiConfig {
             .unwrap_or_default();
         let tvmaze_user_agent = Self::env_value("KAYABOT_TVMAZE_USER_AGENT")
             .or_else(|| Self::env_value("KAYABOT_TVMAZE_API_KEY"))
-            .or_else(|| config.as_ref().and_then(|cfg| cfg.tvmaze_user_agent.clone()))
+            .or_else(|| {
+                config
+                    .as_ref()
+                    .and_then(|cfg| cfg.tvmaze_user_agent.clone())
+            })
             .or_else(|| config.as_ref().and_then(|cfg| cfg.tvmaze_api_key.clone()))
             .unwrap_or_else(|| "KayaBot".to_string());
 
@@ -1541,9 +1697,13 @@ impl ApiConfig {
     }
 
     fn env_value(key: &str) -> Option<String> {
-        env::var(key)
-            .ok()
-            .and_then(|value| if value.trim().is_empty() { None } else { Some(value) })
+        env::var(key).ok().and_then(|value| {
+            if value.trim().is_empty() {
+                None
+            } else {
+                Some(value)
+            }
+        })
     }
 
     fn config_path() -> Option<PathBuf> {
@@ -1929,12 +2089,20 @@ fn config_root() -> Option<PathBuf> {
 }
 
 trait ListItem {
-    fn render(&self, ui: &mut egui::Ui);
+    fn render(&self, app: &mut RenameApp, ui: &mut egui::Ui);
 }
 
-impl ListItem for String {
-    fn render(&self, ui: &mut egui::Ui) {
-        ui.label(self);
+struct OriginalFileRow {
+    index: usize,
+    name: String,
+}
+
+impl ListItem for OriginalFileRow {
+    fn render(&self, app: &mut RenameApp, ui: &mut egui::Ui) {
+        let selected = app.selected_file_index == Some(self.index);
+        if ui.selectable_label(selected, &self.name).clicked() {
+            app.selected_file_index = Some(self.index);
+        }
     }
 }
 
@@ -1948,19 +2116,24 @@ struct NewNameRow {
     muted_color: Color32,
 }
 
-impl NewNameRow {
-}
+impl NewNameRow {}
 
 impl ListItem for NewNameRow {
-    fn render(&self, ui: &mut egui::Ui) {
+    fn render(&self, _app: &mut RenameApp, ui: &mut egui::Ui) {
         if let Some(status) = self.status {
             let (label, color) = match status {
-                matching::MatchStatus::Ok => ("ok", self.status_color.unwrap_or(ui.visuals().hyperlink_color)),
+                matching::MatchStatus::Ok => (
+                    "ok",
+                    self.status_color.unwrap_or(ui.visuals().hyperlink_color),
+                ),
                 matching::MatchStatus::Ambiguous => (
                     "ambiguous",
                     self.status_color.unwrap_or(ui.visuals().warn_fg_color),
                 ),
-                matching::MatchStatus::Error => ("error", self.status_color.unwrap_or(ui.visuals().error_fg_color)),
+                matching::MatchStatus::Error => (
+                    "error",
+                    self.status_color.unwrap_or(ui.visuals().error_fg_color),
+                ),
             };
             ui.vertical(|ui| {
                 ui.horizontal(|ui| {
@@ -1978,11 +2151,7 @@ impl ListItem for NewNameRow {
                     } else {
                         format!("from {original} • {candidate_count} candidate(s)")
                     };
-                    ui.label(
-                        RichText::new(detail)
-                            .color(self.muted_color)
-                            .size(10.0),
-                    );
+                    ui.label(RichText::new(detail).color(self.muted_color).size(10.0));
                 }
             });
         } else {
