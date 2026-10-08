@@ -7,9 +7,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use crate::paths;
 use crate::metadata::models::{EpisodeMatch, TitleMatch};
 use crate::metadata::provider::MetadataSource;
+use crate::paths;
 
 const DEFAULT_TTL_SECONDS: u64 = 60 * 60 * 24;
 const CACHE_ENV_PATH: &str = "KAYABOT_CACHE_PATH";

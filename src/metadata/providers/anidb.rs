@@ -195,10 +195,7 @@ impl AniDbClient {
                 .get("year")
                 .and_then(Value::as_u64)
                 .and_then(|value| u16::try_from(value).ok());
-            let rating = entry
-                .get("rating")
-                .and_then(Value::as_f64)
-                .unwrap_or(0.5) as f32;
+            let rating = entry.get("rating").and_then(Value::as_f64).unwrap_or(0.5) as f32;
             let aliases = entry
                 .get("aliases")
                 .and_then(Value::as_array)
@@ -355,9 +352,6 @@ mod tests {
         assert_eq!(normalized.name, "Example Anime");
         assert_eq!(normalized.year, Some(2006));
         assert_eq!(normalized.source, "AniDB");
-        assert_eq!(
-            normalized.extras.external_ids.anidb.as_deref(),
-            Some("42")
-        );
+        assert_eq!(normalized.extras.external_ids.anidb.as_deref(), Some("42"));
     }
 }

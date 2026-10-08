@@ -505,10 +505,7 @@ mod tests {
     fn rank_candidates_prefers_matching_season_episode() {
         let ranked = rank_candidates(
             "My Show S01E02",
-            &[
-                "My Show S01E03".to_string(),
-                "My Show S01E02".to_string(),
-            ],
+            &["My Show S01E03".to_string(), "My Show S01E02".to_string()],
         );
 
         assert_eq!(ranked[0].original, "My Show S01E02");

@@ -189,7 +189,6 @@ impl TvMazeClient {
             },
         }
     }
-
 }
 
 #[derive(Debug, Clone, Deserialize)]

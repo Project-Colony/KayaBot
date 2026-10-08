@@ -2,9 +2,9 @@ mod advanced;
 mod parsing;
 
 use crate::metadata::models::{EpisodeMatch, TitleMatch};
-use serde::{Deserialize, Serialize};
 pub use advanced::rank_candidates;
 pub use parsing::{ParsedName, parse_filename};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MatchStatus {

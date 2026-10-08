@@ -955,7 +955,6 @@ api_keys.toml, then config.toml.",
                         .desired_width(240.0),
                 );
                 ui.end_row();
-
             });
 
         ui.add_space(8.0);

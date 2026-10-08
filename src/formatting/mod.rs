@@ -91,7 +91,13 @@ pub fn format_movie_name(input: MovieFormatInput<'_>, options: FormatOptions) ->
         .movie_template
         .as_deref()
         .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| if options.include_year { DEFAULT_MOVIE_FORMAT } else { "{n}" });
+        .unwrap_or_else(|| {
+            if options.include_year {
+                DEFAULT_MOVIE_FORMAT
+            } else {
+                "{n}"
+            }
+        });
     format_movie_template(template, input)
 }
 
