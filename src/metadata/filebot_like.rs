@@ -23,6 +23,12 @@ struct TitleRecord {
     episodes: Vec<EpisodeMatch>,
 }
 
+impl Default for FileBotLikeProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FileBotLikeProvider {
     pub fn new() -> Self {
         let dataset = HashMap::new();
@@ -141,14 +147,13 @@ impl MetadataProvider for FileBotLikeProvider {
                 Ok(matches)
             }
             Err(err) => {
-                if Self::should_fallback(&err) {
-                    if let Some(secondary) = self.secondary_source {
-                        if secondary != primary {
-                            let fallback = self.search_title_for_source(query, secondary)?;
-                            self.active_source = secondary;
-                            return Ok(fallback);
-                        }
-                    }
+                if Self::should_fallback(&err)
+                    && let Some(secondary) = self.secondary_source
+                    && secondary != primary
+                {
+                    let fallback = self.search_title_for_source(query, secondary)?;
+                    self.active_source = secondary;
+                    return Ok(fallback);
                 }
                 Err(err)
             }
@@ -160,15 +165,13 @@ impl MetadataProvider for FileBotLikeProvider {
         match self.fetch_episode_list_for_source(title_id, primary) {
             Ok(episodes) => Ok(episodes),
             Err(err) => {
-                if Self::should_fallback(&err) {
-                    if let Some(secondary) = self.secondary_source {
-                        if secondary != primary {
-                            let fallback =
-                                self.fetch_episode_list_for_source(title_id, secondary)?;
-                            self.active_source = secondary;
-                            return Ok(fallback);
-                        }
-                    }
+                if Self::should_fallback(&err)
+                    && let Some(secondary) = self.secondary_source
+                    && secondary != primary
+                {
+                    let fallback = self.fetch_episode_list_for_source(title_id, secondary)?;
+                    self.active_source = secondary;
+                    return Ok(fallback);
                 }
                 Err(err)
             }

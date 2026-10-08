@@ -204,12 +204,12 @@ fn detect_season_episode(tokens: &[String]) -> Option<(u32, u32)> {
 }
 
 fn parse_compact_season_episode(token: &str) -> Option<(u32, u32)> {
-    if let Some(stripped) = token.strip_prefix('s') {
-        if let Some((season_part, episode_part)) = stripped.split_once('e') {
-            let season = season_part.parse::<u32>().ok()?;
-            let episode = episode_part.parse::<u32>().ok()?;
-            return Some((season, episode));
-        }
+    if let Some(stripped) = token.strip_prefix('s')
+        && let Some((season_part, episode_part)) = stripped.split_once('e')
+    {
+        let season = season_part.parse::<u32>().ok()?;
+        let episode = episode_part.parse::<u32>().ok()?;
+        return Some((season, episode));
     }
 
     if let Some((season_part, episode_part)) = token.split_once('x') {

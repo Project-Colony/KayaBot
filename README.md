@@ -22,7 +22,7 @@ and renames the files to a consistent format, in the spirit of FileBot.
 
 ## Build from source
 
-You need a recent stable Rust toolchain (edition 2024, so Rust 1.85 or newer).
+You need a recent stable Rust toolchain (Rust 1.88 or newer).
 
 ```bash
 cargo run --release
