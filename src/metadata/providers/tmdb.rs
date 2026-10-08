@@ -141,20 +141,18 @@ impl TmdbClient {
             region = Some("FR".to_string());
         }
 
-        if region.is_none() {
-            if let Some(lang) = language.as_deref() {
-                if let Some(default_region) = region_for_language(lang) {
-                    region = Some(default_region.to_string());
-                }
-            }
+        if region.is_none()
+            && let Some(lang) = language.as_deref()
+            && let Some(default_region) = region_for_language(lang)
+        {
+            region = Some(default_region.to_string());
         }
 
-        if language.is_none() {
-            if let Some(country) = region.as_deref() {
-                if let Some(default_language) = language_for_region(country) {
-                    language = Some(default_language.to_string());
-                }
-            }
+        if language.is_none()
+            && let Some(country) = region.as_deref()
+            && let Some(default_language) = language_for_region(country)
+        {
+            language = Some(default_language.to_string());
         }
 
         let tmdb_language = match (&language, &region) {
@@ -175,10 +173,8 @@ impl TmdbClient {
         if let Some(language) = language {
             merged.push(("language".to_string(), language));
         }
-        if allow_region {
-            if let Some(region) = region {
-                merged.push(("region".to_string(), region));
-            }
+        if allow_region && let Some(region) = region {
+            merged.push(("region".to_string(), region));
         }
         merged
     }

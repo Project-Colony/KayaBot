@@ -129,10 +129,10 @@ fn clean_tokens(tokens: Vec<String>) -> Vec<String> {
         })
         .collect();
 
-    if let Some(last) = filtered.last() {
-        if looks_like_group_suffix(last) {
-            filtered.pop();
-        }
+    if let Some(last) = filtered.last()
+        && looks_like_group_suffix(last)
+    {
+        filtered.pop();
     }
 
     filtered
@@ -219,12 +219,12 @@ fn looks_like_group_suffix(token: &str) -> bool {
 }
 
 fn parse_compact_season_episode(token: &str) -> Option<(u32, u32)> {
-    if let Some(stripped) = token.strip_prefix('s') {
-        if let Some((season_part, episode_part)) = stripped.split_once('e') {
-            let season = season_part.parse::<u32>().ok()?;
-            let episode = episode_part.parse::<u32>().ok()?;
-            return Some((season, episode));
-        }
+    if let Some(stripped) = token.strip_prefix('s')
+        && let Some((season_part, episode_part)) = stripped.split_once('e')
+    {
+        let season = season_part.parse::<u32>().ok()?;
+        let episode = episode_part.parse::<u32>().ok()?;
+        return Some((season, episode));
     }
 
     if let Some((season_part, episode_part)) = token.split_once('x') {
@@ -267,7 +267,7 @@ fn parse_named_season_episode(tokens: &[String], index: usize) -> Option<(u32, u
 fn parse_numeric_episode(token: &str) -> Option<(u32, u32, bool)> {
     if token.len() == 3 && token.chars().all(|c| c.is_ascii_digit()) {
         let mut digits = token.chars();
-        let season = digits.next()?.to_digit(10)? as u32;
+        let season = digits.next()?.to_digit(10)?;
         let episode: u32 = digits.collect::<String>().parse().ok()?;
         return Some((season, episode, true));
     }

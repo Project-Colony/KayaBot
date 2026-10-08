@@ -2,7 +2,9 @@ use kayabot::matching::{MatchMetadata, MatchResult, match_files};
 
 fn format_metadata(metadata: &MatchMetadata) -> String {
     match metadata {
-        MatchMetadata::Series { title } => format!("Series title={}", title.as_deref().unwrap_or("<none>")),
+        MatchMetadata::Series { title } => {
+            format!("Series title={}", title.as_deref().unwrap_or("<none>"))
+        }
         MatchMetadata::Episode {
             series_title,
             season,
@@ -18,7 +20,8 @@ fn format_metadata(metadata: &MatchMetadata) -> String {
         MatchMetadata::Movie { title, year } => format!(
             "Movie title={} year={}",
             title.as_deref().unwrap_or("<none>"),
-            year.map(|value| value.to_string()).unwrap_or_else(|| "<none>".to_string())
+            year.map(|value| value.to_string())
+                .unwrap_or_else(|| "<none>".to_string())
         ),
     }
 }

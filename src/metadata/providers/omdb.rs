@@ -124,10 +124,7 @@ impl OmdbClient {
             #[serde(default, rename = "Error")]
             error: Option<String>,
         }
-        let response: SearchResponse = self.get_json(&[
-            ("s", query),
-            ("apikey", &self.api_key),
-        ])?;
+        let response: SearchResponse = self.get_json(&[("s", query), ("apikey", &self.api_key)])?;
         if response.response.to_lowercase() == "false" {
             let message = response
                 .error
@@ -213,7 +210,6 @@ impl OmdbClient {
             },
         }
     }
-
 }
 
 fn map_omdb_error(message: &str) -> MetadataError {
@@ -248,12 +244,7 @@ where
     match value {
         serde_json::Value::Number(number) => Ok(number.as_u64().map(|val| val as u16)),
         serde_json::Value::String(text) => {
-            let year = text
-                .chars()
-                .take(4)
-                .collect::<String>()
-                .parse::<u16>()
-                .ok();
+            let year = text.chars().take(4).collect::<String>().parse::<u16>().ok();
             Ok(year)
         }
         _ => Ok(None),

@@ -7,9 +7,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use crate::paths;
 use crate::metadata::models::{EpisodeMatch, TitleMatch};
 use crate::metadata::provider::MetadataSource;
+use crate::paths;
 
 const DEFAULT_TTL_SECONDS: u64 = 60 * 60 * 24;
 const CACHE_ENV_PATH: &str = "KAYABOT_CACHE_PATH";
@@ -34,15 +34,15 @@ impl Default for CachePolicy {
 impl CachePolicy {
     pub fn from_env() -> Self {
         let mut policy = Self::default();
-        if let Ok(value) = std::env::var(CACHE_ENV_TTL) {
-            if let Ok(parsed) = value.parse::<u64>() {
-                policy.ttl_seconds = parsed;
-            }
+        if let Ok(value) = std::env::var(CACHE_ENV_TTL)
+            && let Ok(parsed) = value.parse::<u64>()
+        {
+            policy.ttl_seconds = parsed;
         }
-        if let Ok(value) = std::env::var(CACHE_ENV_REFRESH) {
-            if let Ok(parsed) = value.parse::<bool>() {
-                policy.refresh_on_hit = parsed;
-            }
+        if let Ok(value) = std::env::var(CACHE_ENV_REFRESH)
+            && let Ok(parsed) = value.parse::<bool>()
+        {
+            policy.refresh_on_hit = parsed;
         }
         policy
     }
@@ -86,6 +86,12 @@ pub struct MetadataCache {
     episode_lists: HashMap<CacheKey, CacheEntry<Vec<EpisodeMatch>>>,
     policy: CachePolicy,
     path: PathBuf,
+}
+
+impl Default for MetadataCache {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MetadataCache {

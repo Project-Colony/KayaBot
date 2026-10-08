@@ -48,10 +48,10 @@ impl MetadataPipeline {
     #[allow(dead_code)]
     pub fn set_sources(&mut self, primary: MetadataSource, secondary: Option<MetadataSource>) {
         let mut sources = vec![primary];
-        if let Some(secondary) = secondary {
-            if secondary != primary {
-                sources.push(secondary);
-            }
+        if let Some(secondary) = secondary
+            && secondary != primary
+        {
+            sources.push(secondary);
         }
         self.set_active_sources(sources);
     }
@@ -240,10 +240,10 @@ impl MetadataProvider for MetadataPipeline {
                 .then_with(|| a_idx.cmp(b_idx))
         });
 
-        if let Some(best) = results.first().map(|(_, title)| title) {
-            if let Some(source) = MetadataSource::from_label(&best.source) {
-                self.active_source = source;
-            }
+        if let Some(best) = results.first().map(|(_, title)| title)
+            && let Some(source) = MetadataSource::from_label(&best.source)
+        {
+            self.active_source = source;
         }
 
         Ok(results.into_iter().map(|(_, title)| title).collect())
@@ -266,11 +266,11 @@ impl MetadataProvider for MetadataPipeline {
         }
 
         for source in self.active_sources.clone() {
-            if let Some(provider) = self.provider_mut(source) {
-                if let Ok(result) = provider.fetch_episode_list(title_id) {
-                    self.active_source = source;
-                    return Ok(result);
-                }
+            if let Some(provider) = self.provider_mut(source)
+                && let Ok(result) = provider.fetch_episode_list(title_id)
+            {
+                self.active_source = source;
+                return Ok(result);
             }
         }
 
@@ -296,11 +296,11 @@ impl MetadataProvider for MetadataPipeline {
         }
 
         for source in self.active_sources.clone() {
-            if let Some(provider) = self.provider_mut(source) {
-                if let Ok(result) = provider.fetch_movie_details(title_id) {
-                    self.active_source = source;
-                    return Ok(result);
-                }
+            if let Some(provider) = self.provider_mut(source)
+                && let Ok(result) = provider.fetch_movie_details(title_id)
+            {
+                self.active_source = source;
+                return Ok(result);
             }
         }
 
@@ -429,8 +429,8 @@ fn year_compatible(left: &TitleMatch, right: &TitleMatch) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use crate::metadata::models::{EpisodeMatch, MetadataExtras, MovieMatch, TitleMatch};
 

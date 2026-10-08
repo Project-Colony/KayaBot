@@ -8,7 +8,7 @@ and renames the files to a consistent format, in the spirit of FileBot.
 > parsing, matching against TMDB, TheTVDB, TVmaze, OMDb and AniDB with
 > fallback, a preview, a dry run, the rename itself and CSV/JSON export. The
 > Episodes, Subtitles, SFV and Filter screens are placeholders, and some
-> preferences are saved but not used yet. There is no CI and no release yet.
+> preferences are saved but not used yet. There is no release yet.
 
 ## What it does
 
@@ -22,7 +22,7 @@ and renames the files to a consistent format, in the spirit of FileBot.
 
 ## Build from source
 
-You need a recent stable Rust toolchain (edition 2024, so Rust 1.85 or newer).
+You need a recent stable Rust toolchain (Rust 1.88 or newer).
 
 ```bash
 cargo run --release

@@ -94,20 +94,11 @@ struct RenameExportRow {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[derive(Default)]
 struct AppConfig {
     original_files: Vec<String>,
     match_results: Vec<matching::MatchResult>,
     format_options: FormatOptions,
-}
-
-impl Default for AppConfig {
-    fn default() -> Self {
-        Self {
-            original_files: Vec::new(),
-            match_results: Vec::new(),
-            format_options: FormatOptions::default(),
-        }
-    }
 }
 
 impl AppConfig {
@@ -124,11 +115,11 @@ impl AppConfig {
         let Some(path) = Self::config_path() else {
             return;
         };
-        if let Some(parent) = path.parent() {
-            if let Err(err) = fs::create_dir_all(parent) {
-                eprintln!("Failed to create config directory: {err}");
-                return;
-            }
+        if let Some(parent) = path.parent()
+            && let Err(err) = fs::create_dir_all(parent)
+        {
+            eprintln!("Failed to create config directory: {err}");
+            return;
         }
         let Ok(payload) = toml::to_string_pretty(self) else {
             return;
@@ -277,10 +268,7 @@ impl eframe::App for RenameApp {
 impl RenameApp {
     fn apply_theme(&mut self, ctx: &egui::Context) {
         let visuals = match self.user_preferences.appearance.theme {
-            ThemeChoice::System => self
-                .system_visuals
-                .clone()
-                .unwrap_or_else(egui::Visuals::default),
+            ThemeChoice::System => self.system_visuals.clone().unwrap_or_default(),
             ThemeChoice::Latte => self.catppuccin_visuals(ThemeChoice::Latte),
             ThemeChoice::Frappe => self.catppuccin_visuals(ThemeChoice::Frappe),
             ThemeChoice::Macchiato => self.catppuccin_visuals(ThemeChoice::Macchiato),
@@ -343,11 +331,9 @@ impl RenameApp {
                 if self.add_original_files(paths) {
                     added = true;
                 }
-            } else if !dropped.name.is_empty() {
-                if !self.original_files.contains(&dropped.name) {
-                    self.original_files.push(dropped.name);
-                    added = true;
-                }
+            } else if !dropped.name.is_empty() && !self.original_files.contains(&dropped.name) {
+                self.original_files.push(dropped.name);
+                added = true;
             }
         }
 
@@ -421,10 +407,10 @@ impl RenameApp {
         let valid_files: HashSet<String> = self.original_files.iter().cloned().collect();
         self.manual_overrides
             .retain(|original, _| valid_files.contains(original));
-        if let Some(index) = self.match_picker_file_index {
-            if index >= self.original_files.len() {
-                self.match_picker_file_index = None;
-            }
+        if let Some(index) = self.match_picker_file_index
+            && index >= self.original_files.len()
+        {
+            self.match_picker_file_index = None;
         }
     }
 
@@ -471,19 +457,19 @@ impl RenameApp {
     fn rescan_original_files(&mut self) {
         self.original_files
             .retain(|path| std::path::Path::new(path).exists());
-        if let Some(index) = self.selected_file_index {
-            if index >= self.original_files.len() {
-                self.selected_file_index = None;
-            }
+        if let Some(index) = self.selected_file_index
+            && index >= self.original_files.len()
+        {
+            self.selected_file_index = None;
         }
         self.refresh_after_file_update();
     }
 
     fn load_files_from_picker(&mut self) {
-        if let Some(files) = rfd::FileDialog::new().pick_files() {
-            if self.add_original_files(files) {
-                self.refresh_after_file_update();
-            }
+        if let Some(files) = rfd::FileDialog::new().pick_files()
+            && self.add_original_files(files)
+        {
+            self.refresh_after_file_update();
         }
     }
 
@@ -502,7 +488,7 @@ impl RenameApp {
         let palette = self.theme_palette();
         let frame = Frame::none()
             .fill(palette.mantle)
-            .stroke(Stroke::new(1.0, palette.overlay0))
+            .stroke(Stroke::new(1.0_f32, palette.overlay0))
             .rounding(egui::Rounding::same(4.0))
             .inner_margin(egui::Margin::symmetric(6.0, 10.0));
 
@@ -534,9 +520,9 @@ impl RenameApp {
             palette.surface0
         };
         let stroke = if is_active {
-            Stroke::new(1.5, palette.accent_border)
+            Stroke::new(1.5_f32, palette.accent_border)
         } else {
-            Stroke::new(1.0, palette.overlay0)
+            Stroke::new(1.0_f32, palette.overlay0)
         };
 
         let response = ui.add_sized(
@@ -711,7 +697,7 @@ impl RenameApp {
             ui.add_space(10.0);
             Frame::none()
                 .fill(palette.mantle)
-                .stroke(Stroke::new(1.0, palette.overlay0))
+                .stroke(Stroke::new(1.0_f32, palette.overlay0))
                 .rounding(egui::Rounding::same(6.0))
                 .inner_margin(egui::Margin::symmetric(10.0, 10.0))
                 .show(ui, |ui| {
@@ -776,7 +762,7 @@ impl RenameApp {
             let available_width = ui.available_width();
             let menu_frame = Frame::none()
                 .fill(palette.mantle)
-                .stroke(Stroke::new(1.0, palette.overlay0))
+                .stroke(Stroke::new(1.0_f32, palette.overlay0))
                 .rounding(egui::Rounding::same(6.0))
                 .inner_margin(egui::Margin::symmetric(8.0, 8.0));
 
@@ -801,7 +787,7 @@ impl RenameApp {
 
             Frame::none()
                 .fill(palette.base)
-                .stroke(Stroke::new(1.0, palette.overlay0))
+                .stroke(Stroke::new(1.0_f32, palette.overlay0))
                 .rounding(egui::Rounding::same(6.0))
                 .inner_margin(egui::Margin::symmetric(12.0, 12.0))
                 .show(ui, |ui| {
@@ -840,9 +826,9 @@ impl RenameApp {
             palette.surface0
         };
         let stroke = if is_active {
-            Stroke::new(1.5, palette.accent_border)
+            Stroke::new(1.5_f32, palette.accent_border)
         } else {
-            Stroke::new(1.0, palette.overlay0)
+            Stroke::new(1.0_f32, palette.overlay0)
         };
         let response = ui.add_sized(
             Vec2::new(ui.available_width(), 34.0),
@@ -955,7 +941,6 @@ api_keys.toml, then config.toml.",
                         .desired_width(240.0),
                 );
                 ui.end_row();
-
             });
 
         ui.add_space(8.0);
@@ -1301,6 +1286,7 @@ api_keys.toml, then config.toml.",
         ui.label("This section is under construction.");
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn list_panel<C, F, T>(
         app: &mut RenameApp,
         ui: &mut egui::Ui,
@@ -1318,7 +1304,7 @@ api_keys.toml, then config.toml.",
         let palette = app.theme_palette();
         let panel_frame = Frame::none()
             .fill(palette.mantle)
-            .stroke(Stroke::new(1.0, palette.overlay0))
+            .stroke(Stroke::new(1.0_f32, palette.overlay0))
             .rounding(egui::Rounding::same(4.0))
             .inner_margin(egui::Margin::symmetric(8.0, 8.0));
 
@@ -1337,7 +1323,7 @@ api_keys.toml, then config.toml.",
                         let toolbar_height = 34.0;
                         let list_height = (remaining - toolbar_height).max(120.0);
                         Frame::none()
-                            .stroke(Stroke::new(1.0, palette.overlay0))
+                            .stroke(Stroke::new(1.0_f32, palette.overlay0))
                             .fill(palette.base)
                             .rounding(egui::Rounding::same(2.0))
                             .show(ui, |ui| {
@@ -1460,7 +1446,7 @@ api_keys.toml, then config.toml.",
         let palette = self.theme_palette();
         let frame = Frame::none()
             .fill(palette.mantle)
-            .stroke(Stroke::new(1.0, palette.overlay0))
+            .stroke(Stroke::new(1.0_f32, palette.overlay0))
             .rounding(egui::Rounding::same(4.0));
 
         ui.allocate_ui_with_layout(
@@ -1491,7 +1477,7 @@ api_keys.toml, then config.toml.",
             Button::new(RichText::new(format!("{icon}\n{label}")).size(14.0))
                 .wrap(true)
                 .fill(palette.base)
-                .stroke(Stroke::new(1.0, palette.overlay0)),
+                .stroke(Stroke::new(1.0_f32, palette.overlay0)),
         );
         if response.clicked() {
             println!("Action clicked: {label}");
@@ -1888,7 +1874,7 @@ api_keys.toml, then config.toml.",
     }
 
     fn content_type_for_result(&self, result: &matching::MatchResult) -> Option<ContentType> {
-        result.content_type.or_else(|| match result.metadata {
+        result.content_type.or(match result.metadata {
             Some(matching::MatchMetadata::Movie { .. }) => Some(ContentType::Movie),
             Some(matching::MatchMetadata::Series { .. })
             | Some(matching::MatchMetadata::Episode { .. }) => Some(ContentType::Series),
@@ -1995,10 +1981,7 @@ api_keys.toml, then config.toml.",
                 .clone()
                 .or_else(|| (!detected.is_empty()).then(|| detected.to_string())),
             Some(matching::MatchMetadata::Movie { title, year }) => {
-                let Some(title) = title.clone() else {
-                    return None;
-                };
-                let mut query = title;
+                let mut query = title.clone()?;
                 if let Some(year) = year {
                     query = format!("{query} {year}");
                 }
@@ -2024,10 +2007,10 @@ api_keys.toml, then config.toml.",
         self.refresh_rename_ui_state();
 
         let parsed_hint = self.detect_search_hint();
-        if self.detected_series_name.trim().is_empty() {
-            if let Some(title) = parsed_hint.as_ref().and_then(|hint| hint.title.clone()) {
-                self.detected_series_name = title;
-            }
+        if self.detected_series_name.trim().is_empty()
+            && let Some(title) = parsed_hint.as_ref().and_then(|hint| hint.title.clone())
+        {
+            self.detected_series_name = title;
         }
 
         let mut content_type = self.active_content_type();
@@ -2052,17 +2035,16 @@ api_keys.toml, then config.toml.",
         self.refresh_active_sources(content_type);
 
         let mut query = self.detected_series_name.trim().to_string();
-        if query.is_empty() {
-            if let Some(title) = parsed_hint.as_ref().and_then(|hint| hint.title.clone()) {
-                query = title;
-            }
+        if query.is_empty()
+            && let Some(title) = parsed_hint.as_ref().and_then(|hint| hint.title.clone())
+        {
+            query = title;
         }
-        if content_type == ContentType::Movie {
-            if let Some(year) = parsed_hint.as_ref().and_then(|hint| hint.year) {
-                if !query.is_empty() {
-                    query = format!("{query} {year}");
-                }
-            }
+        if content_type == ContentType::Movie
+            && let Some(year) = parsed_hint.as_ref().and_then(|hint| hint.year)
+            && !query.is_empty()
+        {
+            query = format!("{query} {year}");
         }
         let query = query.trim();
         if query.is_empty() {
@@ -2443,12 +2425,10 @@ api_keys.toml, then config.toml.",
                                                 let mut override_entry = current_override.clone();
                                                 override_entry.season = Some(episode.season);
                                                 override_entry.episode = Some(episode.episode);
-                                                if override_entry.title.is_none() {
-                                                    if let Some(title) = self.selected_title_match()
-                                                    {
-                                                        override_entry.title =
-                                                            Some(title.name.clone());
-                                                    }
+                                                if override_entry.title.is_none()
+                                                    && let Some(title) = self.selected_title_match()
+                                                {
+                                                    override_entry.title = Some(title.name.clone());
                                                 }
                                                 self.set_manual_override(
                                                     &file_name,
@@ -2597,12 +2577,10 @@ api_keys.toml, then config.toml.",
                             ContentType::Series => "Series".to_string(),
                         }
                     }),
-                    confidence: result
-                        .metadata_confidence
-                        .or_else(|| Some(result.confidence)),
+                    confidence: result.metadata_confidence.or(Some(result.confidence)),
                     candidate_count: result
                         .metadata_candidate_count
-                        .or_else(|| Some(result.candidates.len())),
+                        .or(Some(result.candidates.len())),
                     metadata_source: result
                         .episode_match
                         .as_ref()
@@ -2827,16 +2805,16 @@ api_keys.toml, then config.toml.",
             );
         }
 
-        if content_type == ContentType::Movie {
-            if let Some(title_match) = &result.title_match {
-                return formatting::format_movie_name(
-                    MovieFormatInput {
-                        title: &title_match.name,
-                        year: title_match.year.map(u32::from),
-                    },
-                    self.format_options.clone(),
-                );
-            }
+        if content_type == ContentType::Movie
+            && let Some(title_match) = &result.title_match
+        {
+            return formatting::format_movie_name(
+                MovieFormatInput {
+                    title: &title_match.name,
+                    year: title_match.year.map(u32::from),
+                },
+                self.format_options.clone(),
+            );
         }
 
         if let Some(title_match) = &result.title_match {
@@ -2889,7 +2867,7 @@ api_keys.toml, then config.toml.",
                 } else {
                     detected.to_string()
                 };
-                let resolved_title = episode_title.as_deref().or_else(|| series_title.as_deref());
+                let resolved_title = episode_title.as_deref().or(series_title.as_deref());
 
                 formatting::format_series_name(
                     SeriesFormatInput {
@@ -3077,13 +3055,7 @@ impl ApiConfig {
     }
 
     fn env_value(key: &str) -> Option<String> {
-        env::var(key).ok().and_then(|value| {
-            if value.trim().is_empty() {
-                None
-            } else {
-                Some(value)
-            }
-        })
+        env::var(key).ok().filter(|value| !value.trim().is_empty())
     }
 
     fn config_path() -> Option<PathBuf> {
@@ -3731,6 +3703,7 @@ impl Default for UtilitiesPreferences {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(default)]
+#[derive(Default)]
 struct UserPreferences {
     #[serde(rename = "Connections")]
     connections: ConnectionsPreferences,
@@ -3742,18 +3715,6 @@ struct UserPreferences {
     experience: ExperiencePreferences,
     #[serde(rename = "Utilities")]
     utilities: UtilitiesPreferences,
-}
-
-impl Default for UserPreferences {
-    fn default() -> Self {
-        Self {
-            connections: ConnectionsPreferences::default(),
-            language: LanguagePreferences::default(),
-            appearance: AppearancePreferences::default(),
-            experience: ExperiencePreferences::default(),
-            utilities: UtilitiesPreferences::default(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -3863,11 +3824,11 @@ impl UserPreferences {
         let Some(path) = Self::preferences_path() else {
             return;
         };
-        if let Some(parent) = path.parent() {
-            if let Err(err) = fs::create_dir_all(parent) {
-                eprintln!("Failed to create preferences directory: {err}");
-                return;
-            }
+        if let Some(parent) = path.parent()
+            && let Err(err) = fs::create_dir_all(parent)
+        {
+            eprintln!("Failed to create preferences directory: {err}");
+            return;
         }
         let Ok(payload) = toml::to_string_pretty(self) else {
             return;

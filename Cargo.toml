@@ -2,6 +2,7 @@
 name = "kayabot"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.88"
 description = "Desktop media renamer that matches movies and TV episodes against online metadata sources"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/Project-Colony/KayaBot"

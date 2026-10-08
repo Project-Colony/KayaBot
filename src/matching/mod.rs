@@ -2,9 +2,9 @@ mod advanced;
 mod parsing;
 
 use crate::metadata::models::{EpisodeMatch, TitleMatch};
-use serde::{Deserialize, Serialize};
 pub use advanced::rank_candidates;
 pub use parsing::{ParsedName, parse_filename};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MatchStatus {
@@ -109,12 +109,14 @@ fn match_single(filename: &str) -> MatchResult {
         });
     }
 
-    if parsed.season.is_none() && parsed.episode.is_none() && parsed.year.is_none() {
-        if parsed.title.is_some() {
-            candidates.push(MatchMetadata::Series {
-                title: parsed.title.clone(),
-            });
-        }
+    if parsed.season.is_none()
+        && parsed.episode.is_none()
+        && parsed.year.is_none()
+        && parsed.title.is_some()
+    {
+        candidates.push(MatchMetadata::Series {
+            title: parsed.title.clone(),
+        });
     }
 
     let metadata = candidates.first().cloned();
@@ -126,17 +128,18 @@ fn match_single(filename: &str) -> MatchResult {
 
     let status = if candidates.is_empty() {
         MatchStatus::Error
-    } else if candidates.len() > 1 || parsed.used_numeric_heuristic {
-        MatchStatus::Ambiguous
-    } else if matches!(
-        metadata,
-        Some(MatchMetadata::Series { title: None, .. })
-            | Some(MatchMetadata::Episode {
-                series_title: None,
-                ..
-            })
-            | Some(MatchMetadata::Movie { title: None, .. })
-    ) {
+    } else if candidates.len() > 1
+        || parsed.used_numeric_heuristic
+        || matches!(
+            metadata,
+            Some(MatchMetadata::Series { title: None, .. })
+                | Some(MatchMetadata::Episode {
+                    series_title: None,
+                    ..
+                })
+                | Some(MatchMetadata::Movie { title: None, .. })
+        )
+    {
         MatchStatus::Ambiguous
     } else {
         MatchStatus::Ok

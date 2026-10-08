@@ -36,11 +36,11 @@ impl FormatOptions {
         let Some(path) = Self::config_path() else {
             return;
         };
-        if let Some(parent) = path.parent() {
-            if let Err(err) = fs::create_dir_all(parent) {
-                eprintln!("Failed to create format options directory: {err}");
-                return;
-            }
+        if let Some(parent) = path.parent()
+            && let Err(err) = fs::create_dir_all(parent)
+        {
+            eprintln!("Failed to create format options directory: {err}");
+            return;
         }
         let Ok(payload) = toml::to_string_pretty(self) else {
             return;
@@ -76,7 +76,7 @@ pub fn format_series_name(input: SeriesFormatInput<'_>, options: FormatOptions) 
         .series_template
         .as_deref()
         .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| {
+        .unwrap_or({
             if options.include_episode_title {
                 DEFAULT_SERIES_FORMAT
             } else {
@@ -91,7 +91,13 @@ pub fn format_movie_name(input: MovieFormatInput<'_>, options: FormatOptions) ->
         .movie_template
         .as_deref()
         .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| if options.include_year { DEFAULT_MOVIE_FORMAT } else { "{n}" });
+        .unwrap_or({
+            if options.include_year {
+                DEFAULT_MOVIE_FORMAT
+            } else {
+                "{n}"
+            }
+        });
     format_movie_template(template, input)
 }
 
@@ -194,7 +200,7 @@ fn parse_template(template: &str) -> Vec<TemplateSegment> {
                 buffer.clear();
             }
             let mut token = String::new();
-            while let Some(next) = chars.next() {
+            for next in chars.by_ref() {
                 if next == '}' {
                     break;
                 }
@@ -314,9 +320,8 @@ pub fn sanitize_component(value: &str) -> String {
         if matches!(
             ch,
             '/' | '\\' | '?' | '%' | '*' | ':' | '|' | '"' | '<' | '>'
-        ) {
-            cleaned.push('_');
-        } else if ch.is_control() {
+        ) || ch.is_control()
+        {
             cleaned.push('_');
         } else {
             cleaned.push(ch);
@@ -388,14 +393,13 @@ fn is_tag_token(token: &str, tags: &[&str]) -> bool {
             return true;
         }
     }
-    if let Some((left, right)) = lower.split_once('x') {
-        if !left.is_empty()
-            && !right.is_empty()
-            && left.chars().all(|c| c.is_ascii_digit())
-            && right.chars().all(|c| c.is_ascii_digit())
-        {
-            return true;
-        }
+    if let Some((left, right)) = lower.split_once('x')
+        && !left.is_empty()
+        && !right.is_empty()
+        && left.chars().all(|c| c.is_ascii_digit())
+        && right.chars().all(|c| c.is_ascii_digit())
+    {
+        return true;
     }
     false
 }
