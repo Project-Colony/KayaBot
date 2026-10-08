@@ -39,3 +39,39 @@ jobs:
 
       - name: Tests
         run: cargo test --locked --all-targets
+
+  # rust-version in Cargo.toml is a promise about who can build KayaBot.
+  # Without this job nothing ever builds on it, and it drifts.
+  #
+  # RUSTUP_TOOLCHAIN is what pins the cargo invocations: it outranks both the
+  # rustup default the toolchain action sets and any rust-toolchain.toml. The
+  # rustc check makes a pin that silently stopped working fail loudly.
+  msrv:
+    name: MSRV
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read the declared MSRV
+        id: msrv
+        run: |
+          version=$(grep '^rust-version' Cargo.toml | tr -d ' "' | cut -d= -f2)
+          [ -n "$version" ] || { echo "::error::could not read rust-version from Cargo.toml"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "RUSTUP_TOOLCHAIN=$version" >> "$GITHUB_ENV"
+
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable branch
+        with:
+          toolchain: ${{ steps.msrv.outputs.version }}
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: msrv-${{ steps.msrv.outputs.version }}
+
+      - name: Build on the declared floor
+        run: |
+          rustc --version | grep -q "^rustc ${RUSTUP_TOOLCHAIN}[. ]" \
+            || { echo "::error::expected rustc ${RUSTUP_TOOLCHAIN}, got $(rustc --version)"; exit 1; }
+          cargo check --locked --all-targets
