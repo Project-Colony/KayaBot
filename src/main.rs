@@ -3037,10 +3037,16 @@ impl ApiKeysFile {
 
 /// Writes `contents` to a temporary file next to `path`, then renames it into
 /// place, so a crash never leaves a half-written file. On Unix the file is
-/// created readable by its owner only (0600).
+/// created readable by its owner only (0600). A symlinked `path` keeps its
+/// link: the file it points to is the one replaced.
 fn write_private_file(path: &Path, contents: &str) -> io::Result<()> {
     use std::io::Write as _;
 
+    let path = match fs::canonicalize(path) {
+        Ok(target) => target,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => path.to_path_buf(),
+        Err(err) => return Err(err),
+    };
     let temp_path = path.with_extension("toml.tmp");
     // A leftover from an interrupted save may carry looser permissions.
     let _ = fs::remove_file(&temp_path);
@@ -3052,7 +3058,7 @@ fn write_private_file(path: &Path, contents: &str) -> io::Result<()> {
     file.write_all(contents.as_bytes())?;
     file.sync_all()?;
     drop(file);
-    fs::rename(&temp_path, path)
+    fs::rename(&temp_path, &path)
 }
 
 /// Drops group and other permissions from a file written before KayaBot
@@ -4194,6 +4200,36 @@ mod tests {
         let (keys, _) = ApiKeysFile::load_from(path.clone());
         assert!(keys.is_some());
         assert_eq!(mode(&path), 0o600);
+
+        fs::remove_dir_all(&temp).expect("temp dir cleanup");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn saving_through_a_symlink_keeps_the_link() {
+        let temp = temp_dir("api-keys-symlink");
+        let target = temp.join("dotfiles-api_keys.toml");
+        let link = temp.join("api_keys.toml");
+        fs::write(&target, "").expect("write target");
+        std::os::unix::fs::symlink(&target, &link).expect("symlink");
+
+        let keys = ApiKeysFile {
+            omdb_api_key: Some("omdb-key".to_string()),
+            ..ApiKeysFile::default()
+        };
+        keys.save_to(&link).expect("save");
+
+        assert!(
+            fs::symlink_metadata(&link)
+                .expect("link metadata")
+                .file_type()
+                .is_symlink()
+        );
+        assert!(
+            fs::read_to_string(&target)
+                .expect("read target")
+                .contains("omdb-key")
+        );
 
         fs::remove_dir_all(&temp).expect("temp dir cleanup");
     }
