@@ -8,7 +8,6 @@ use crate::metadata::models::{EpisodeMatch, MovieMatch, TitleMatch};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum MetadataSource {
     TheMovieDb,
-    AniDb,
     TheTvDb,
     TvMaze,
     Omdb,
@@ -18,7 +17,6 @@ impl MetadataSource {
     pub fn label(self) -> &'static str {
         match self {
             MetadataSource::TheMovieDb => "TheMovieDB",
-            MetadataSource::AniDb => "AniDB",
             MetadataSource::TheTvDb => "TheTVDB",
             MetadataSource::TvMaze => "TVmaze",
             MetadataSource::Omdb => "OMDb",
@@ -28,7 +26,6 @@ impl MetadataSource {
     pub fn from_label(label: &str) -> Option<Self> {
         match label.to_lowercase().as_str() {
             "themoviedb" | "tmdb" => Some(MetadataSource::TheMovieDb),
-            "anidb" => Some(MetadataSource::AniDb),
             "thetvdb" | "tvdb" => Some(MetadataSource::TheTvDb),
             "tvmaze" => Some(MetadataSource::TvMaze),
             "omdb" => Some(MetadataSource::Omdb),

@@ -178,13 +178,7 @@ impl TheTvDbClient {
                 apikey: self.api_key.as_str(),
             })
             .send()
-            .map_err(|err| {
-                if err.is_timeout() {
-                    MetadataError::Network("TheTVDB auth request timed out.".to_string())
-                } else {
-                    MetadataError::Network(format!("TheTVDB auth request failed: {err}"))
-                }
-            })?;
+            .map_err(|err| super::request_error("TheTVDB auth", err))?;
         let status = response.status();
         if status == reqwest::StatusCode::UNAUTHORIZED {
             return Err(MetadataError::Other(
@@ -196,9 +190,9 @@ impl TheTvDbClient {
                 "TheTVDB auth returned status {status}."
             )));
         }
-        let payload = response.json::<TheTvDbTokenResponse>().map_err(|err| {
-            MetadataError::InvalidResponse(format!("Failed to parse TheTVDB auth response: {err}"))
-        })?;
+        let payload = response
+            .json::<TheTvDbTokenResponse>()
+            .map_err(|err| super::parse_error("TheTVDB auth", err))?;
         Ok(TheTvDbToken {
             value: payload.data.token,
             expires_at: Some(Instant::now() + Duration::from_secs(23 * 60 * 60)),
@@ -233,13 +227,7 @@ impl TheTvDbClient {
             .get(url)
             .headers(self.headers_for_token(&token_value)?)
             .send()
-            .map_err(|err| {
-                if err.is_timeout() {
-                    MetadataError::Network("TheTVDB refresh request timed out.".to_string())
-                } else {
-                    MetadataError::Network(format!("TheTVDB refresh request failed: {err}"))
-                }
-            })?;
+            .map_err(|err| super::request_error("TheTVDB refresh", err))?;
         let status = response.status();
         if status == reqwest::StatusCode::UNAUTHORIZED {
             self.token = Some(self.authenticate()?);
@@ -250,11 +238,9 @@ impl TheTvDbClient {
                 "TheTVDB refresh returned status {status}."
             )));
         }
-        let payload = response.json::<TheTvDbTokenResponse>().map_err(|err| {
-            MetadataError::InvalidResponse(format!(
-                "Failed to parse TheTVDB refresh response: {err}"
-            ))
-        })?;
+        let payload = response
+            .json::<TheTvDbTokenResponse>()
+            .map_err(|err| super::parse_error("TheTVDB refresh", err))?;
         self.token = Some(TheTvDbToken {
             value: payload.data.token,
             expires_at: Some(Instant::now() + Duration::from_secs(23 * 60 * 60)),
@@ -289,13 +275,7 @@ impl TheTvDbClient {
             .headers(self.headers_for_token(&token_value)?)
             .query(&self.build_query(query))
             .send()
-            .map_err(|err| {
-                if err.is_timeout() {
-                    MetadataError::Network("TheTVDB request timed out.".to_string())
-                } else {
-                    MetadataError::Network(format!("TheTVDB request failed: {err}"))
-                }
-            })?;
+            .map_err(|err| super::request_error("TheTVDB", err))?;
         let status = response.status();
         if status == reqwest::StatusCode::UNAUTHORIZED {
             if allow_retry {
@@ -321,9 +301,9 @@ impl TheTvDbClient {
                 "TheTVDB returned status {status}."
             )));
         }
-        response.json::<T>().map_err(|err| {
-            MetadataError::InvalidResponse(format!("Failed to parse TheTVDB response: {err}"))
-        })
+        response
+            .json::<T>()
+            .map_err(|err| super::parse_error("TheTVDB", err))
     }
 
     fn search_series(&mut self, query: &str) -> Result<Vec<TheTvDbSeries>, MetadataError> {

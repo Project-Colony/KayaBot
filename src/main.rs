@@ -15,10 +15,9 @@ use metadata::locale::MetadataLocale;
 use metadata::models::{EpisodeMatch, TitleMatch};
 use metadata::provider::{MetadataProvider, MetadataSource};
 use metadata::providers::{
-    anidb::AniDbClient, omdb::OmdbClient, thetvdb::TheTvDbClient, tmdb::TmdbClient,
-    tvmaze::TvMazeClient,
+    omdb::OmdbClient, thetvdb::TheTvDbClient, tmdb::TmdbClient, tvmaze::TvMazeClient,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::{
     collections::{HashMap, HashSet},
     env, fs, io,
@@ -92,48 +91,6 @@ struct RenameExportRow {
     final_path: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-#[derive(Default)]
-struct AppConfig {
-    original_files: Vec<String>,
-    match_results: Vec<matching::MatchResult>,
-    format_options: FormatOptions,
-}
-
-impl AppConfig {
-    fn load() -> Option<Self> {
-        let path = Self::config_path()?;
-        let contents = fs::read_to_string(path).ok()?;
-        let mut config: Self = toml::from_str(&contents).ok()?;
-        config.original_files.clear();
-        config.match_results.clear();
-        Some(config)
-    }
-
-    fn save(&self) {
-        let Some(path) = Self::config_path() else {
-            return;
-        };
-        if let Some(parent) = path.parent()
-            && let Err(err) = fs::create_dir_all(parent)
-        {
-            eprintln!("Failed to create config directory: {err}");
-            return;
-        }
-        let Ok(payload) = toml::to_string_pretty(self) else {
-            return;
-        };
-        if let Err(err) = fs::write(path, payload) {
-            eprintln!("Failed to save config: {err}");
-        }
-    }
-
-    fn config_path() -> Option<PathBuf> {
-        paths::app_config_dir().map(|base| base.join("config.toml"))
-    }
-}
-
 struct RenameApp {
     active_left_nav: LeftNav,
     original_files: Vec<String>,
@@ -159,7 +116,6 @@ struct RenameApp {
     detection_notice: Option<String>,
     force_metadata_source: bool,
     api_config: ApiConfig,
-    config_load_status: ConfigLoadStatus,
     config_feedback_message: Option<String>,
     api_keys_form: ApiKeysForm,
     api_keys_load_status: ApiKeysLoadStatus,
@@ -171,41 +127,18 @@ struct RenameApp {
 
 impl Default for RenameApp {
     fn default() -> Self {
-        let app_config = AppConfig::load();
-        let original_files = app_config
-            .as_ref()
-            .map(|config| config.original_files.clone())
-            .unwrap_or_default();
-        let match_results = app_config
-            .as_ref()
-            .map(|config| config.match_results.clone())
-            .unwrap_or_default();
-        let format_options = app_config
-            .as_ref()
-            .map(|config| config.format_options.clone())
-            .or_else(FormatOptions::load)
-            .unwrap_or_default();
-        let rename_ui_state = if match_results.is_empty() {
-            RenameUiState::Empty
-        } else {
-            RenameUiState::Success(match_results.len())
-        };
+        let format_options = FormatOptions::load().unwrap_or_default();
         let user_preferences = UserPreferences::load().unwrap_or_default();
-        let (api_config, config_load_status, api_keys_load_status, api_keys_file) =
-            ApiConfig::from_env();
+        let (api_config, api_keys_load_status, api_keys_file) = ApiConfig::from_env();
         let api_keys_form = ApiKeysForm::from_file(api_keys_file);
         let mut metadata_provider =
             Self::build_metadata_pipeline(&api_config, user_preferences.metadata_locale());
-        metadata_provider.set_active_sources(vec![
-            MetadataSource::TheTvDb,
-            MetadataSource::TvMaze,
-            MetadataSource::AniDb,
-        ]);
+        metadata_provider.set_active_sources(vec![MetadataSource::TheTvDb, MetadataSource::TvMaze]);
 
-        let mut app = Self {
+        Self {
             active_left_nav: LeftNav::Rename,
-            original_files,
-            match_results,
+            original_files: Vec::new(),
+            match_results: Vec::new(),
             selected_file_index: None,
             detected_series_name: String::new(),
             fetch_status: FetchStatus::Idle,
@@ -220,14 +153,13 @@ impl Default for RenameApp {
             rename_summaries: Vec::new(),
             format_options,
             metadata_provider,
-            rename_ui_state,
+            rename_ui_state: RenameUiState::Empty,
             active_metadata_source: MetadataSource::TheTvDb,
             preferred_movie_source: MetadataSource::TheMovieDb,
             preferred_series_source: MetadataSource::TheTvDb,
             detection_notice: None,
             force_metadata_source: false,
             api_config,
-            config_load_status,
             config_feedback_message: None,
             api_keys_form,
             api_keys_load_status,
@@ -235,12 +167,7 @@ impl Default for RenameApp {
             active_settings_section: SettingsSection::Program,
             user_preferences,
             system_visuals: None,
-        };
-        if !app.match_results.is_empty() {
-            app.apply_content_detection();
-            app.refresh_rename_ui_state();
         }
-        app
     }
 }
 
@@ -391,16 +318,6 @@ impl RenameApp {
         self.rename_summaries.clear();
         self.prune_manual_overrides();
         self.refresh_rename_ui_state();
-        self.persist_config();
-    }
-
-    fn persist_config(&self) {
-        let config = AppConfig {
-            original_files: Vec::new(),
-            match_results: Vec::new(),
-            format_options: self.format_options.clone(),
-        };
-        config.save();
     }
 
     fn prune_manual_overrides(&mut self) {
@@ -539,7 +456,6 @@ impl RenameApp {
 
         if response.clicked() {
             self.active_left_nav = id;
-            println!("Left nav clicked: {id:?}");
         }
     }
 
@@ -878,8 +794,7 @@ impl RenameApp {
         ui.add_space(6.0);
         ui.label(
             RichText::new(
-                "API keys are loaded in this order: environment variables, \
-api_keys.toml, then config.toml.",
+                "API keys are read from environment variables first, then api_keys.toml.",
             )
             .size(11.0)
             .color(palette.subtext0),
@@ -891,17 +806,7 @@ api_keys.toml, then config.toml.",
                     .color(palette.subtext0),
             );
         }
-        if let Some(path) = ApiConfig::config_path() {
-            ui.label(
-                RichText::new(format!("config.toml: {}", path.display()))
-                    .size(11.0)
-                    .color(palette.subtext0),
-            );
-        }
         if let Some(message) = self.api_keys_load_status.message() {
-            ui.label(RichText::new(message).size(11.0).color(palette.danger));
-        }
-        if let Some(message) = self.config_load_status.message() {
             ui.label(RichText::new(message).size(11.0).color(palette.danger));
         }
         ui.add_space(10.0);
@@ -929,14 +834,6 @@ api_keys.toml, then config.toml.",
                 ui.label("OMDB API Key");
                 ui.add(
                     TextEdit::singleline(&mut self.api_keys_form.omdb_api_key)
-                        .password(true)
-                        .desired_width(240.0),
-                );
-                ui.end_row();
-
-                ui.label("AniDB API Key");
-                ui.add(
-                    TextEdit::singleline(&mut self.api_keys_form.anidb_api_key)
                         .password(true)
                         .desired_width(240.0),
                 );
@@ -1003,12 +900,6 @@ api_keys.toml, then config.toml.",
             "OMDB",
             self.api_config.omdb_configured(),
             "omdb_api_key",
-        );
-        self.settings_status_row(
-            ui,
-            "AniDB",
-            self.api_config.anidb_configured(),
-            "anidb_api_key",
         );
 
         false
@@ -1215,10 +1106,6 @@ api_keys.toml, then config.toml.",
                 )),
             ),
             (
-                MetadataSource::AniDb,
-                Box::new(AniDbClient::new(api_config.anidb_api_key.clone())),
-            ),
-            (
                 MetadataSource::TheTvDb,
                 Box::new(TheTvDbClient::new(api_config.tvdb_api_key.clone(), locale)),
             ),
@@ -1234,9 +1121,8 @@ api_keys.toml, then config.toml.",
     }
 
     fn reload_api_config(&mut self) {
-        let (api_config, config_load_status, api_keys_load_status, _) = ApiConfig::from_env();
+        let (api_config, api_keys_load_status, _) = ApiConfig::from_env();
         self.api_config = api_config;
-        self.config_load_status = config_load_status;
         self.api_keys_load_status = api_keys_load_status;
         self.rebuild_metadata_provider();
     }
@@ -1363,7 +1249,6 @@ api_keys.toml, then config.toml.",
         ui.push_id("episode_sources", |ui| {
             let episode_sources = [
                 MetadataSource::TheMovieDb,
-                MetadataSource::AniDb,
                 MetadataSource::TheTvDb,
                 MetadataSource::TvMaze,
             ];
@@ -1430,14 +1315,9 @@ api_keys.toml, then config.toml.",
                 _ => vec![MetadataSource::TheMovieDb, MetadataSource::Omdb],
             },
             ContentType::Series => match primary {
-                MetadataSource::TheTvDb => vec![MetadataSource::TvMaze, MetadataSource::AniDb],
-                MetadataSource::TvMaze => vec![MetadataSource::TheTvDb, MetadataSource::AniDb],
-                MetadataSource::AniDb => vec![MetadataSource::TheTvDb, MetadataSource::TvMaze],
-                _ => vec![
-                    MetadataSource::TheTvDb,
-                    MetadataSource::TvMaze,
-                    MetadataSource::AniDb,
-                ],
+                MetadataSource::TheTvDb => vec![MetadataSource::TvMaze],
+                MetadataSource::TvMaze => vec![MetadataSource::TheTvDb],
+                _ => vec![MetadataSource::TheTvDb, MetadataSource::TvMaze],
             },
         }
     }
@@ -1480,14 +1360,12 @@ api_keys.toml, then config.toml.",
                 .stroke(Stroke::new(1.0_f32, palette.overlay0)),
         );
         if response.clicked() {
-            println!("Action clicked: {label}");
             if label == "Match" {
                 self.match_results = self.match_files_with_metadata();
                 self.apply_content_detection();
                 self.rename_feedback_message = None;
                 self.rename_summaries.clear();
                 self.refresh_rename_ui_state();
-                self.persist_config();
             } else if label == "Rename" {
                 self.perform_rename();
             }
@@ -1525,7 +1403,6 @@ api_keys.toml, then config.toml.",
             self.manual_overrides.clear();
             self.match_results = matching::match_files(&self.original_files);
             self.apply_content_detection();
-            self.persist_config();
         }
 
         self.refresh_rename_ui_state();
@@ -2283,7 +2160,6 @@ api_keys.toml, then config.toml.",
             }
             if format_changed {
                 self.format_options.save();
-                self.persist_config();
             }
             ui.label(
                 RichText::new(default_template)
@@ -2947,9 +2823,6 @@ api_keys.toml, then config.toml.",
         if let Some(id) = ids.tvmaze.as_deref() {
             external_ids.push(format!("tvmaze:{id}"));
         }
-        if let Some(id) = ids.anidb.as_deref() {
-            external_ids.push(format!("anidb:{id}"));
-        }
         if let Some(id) = ids.omdb.as_deref() {
             external_ids.push(format!("omdb:{id}"));
         }
@@ -2982,19 +2855,12 @@ struct ApiConfig {
     tmdb_token: String,
     tvdb_api_key: String,
     omdb_api_key: String,
-    anidb_api_key: String,
     tvmaze_user_agent: String,
 }
 
 impl ApiConfig {
-    fn from_env() -> (
-        Self,
-        ConfigLoadStatus,
-        ApiKeysLoadStatus,
-        Option<ApiKeysFile>,
-    ) {
+    fn from_env() -> (Self, ApiKeysLoadStatus, Option<ApiKeysFile>) {
         let (api_keys, api_keys_status) = ApiKeysFile::load();
-        let (config, load_status) = ConfigFile::load();
         let tmdb_token = Self::env_value("KAYABOT_TMDB_BEARER_TOKEN")
             .or_else(|| Self::env_value("KAYABOT_TMDB_API_KEY"))
             .or_else(|| {
@@ -3003,30 +2869,12 @@ impl ApiConfig {
                     .and_then(|keys| keys.tmdb_bearer_token.clone())
             })
             .or_else(|| api_keys.as_ref().and_then(|keys| keys.tmdb_api_key.clone()))
-            .or_else(|| {
-                config
-                    .as_ref()
-                    .and_then(|cfg| cfg.tmdb_bearer_token.clone())
-            })
-            .or_else(|| config.as_ref().and_then(|cfg| cfg.tmdb_api_key.clone()))
             .unwrap_or_default();
         let tvdb_api_key = Self::env_value("KAYABOT_TVDB_API_KEY")
             .or_else(|| api_keys.as_ref().and_then(|keys| keys.tvdb_api_key.clone()))
-            .or_else(|| config.as_ref().and_then(|cfg| cfg.tvdb_api_key.clone()))
             .unwrap_or_default();
         let omdb_api_key = Self::env_value("KAYABOT_OMDB_API_KEY")
             .or_else(|| api_keys.as_ref().and_then(|keys| keys.omdb_api_key.clone()))
-            .or_else(|| config.as_ref().and_then(|cfg| cfg.omdb_api_key.clone()))
-            .unwrap_or_default();
-        let anidb_api_key = Self::env_value("KAYABOT_ANIDB_PASSWORD")
-            .or_else(|| Self::env_value("KAYABOT_ANIDB_API_KEY"))
-            .or_else(|| {
-                api_keys
-                    .as_ref()
-                    .and_then(|keys| keys.anidb_api_key.clone())
-            })
-            .or_else(|| config.as_ref().and_then(|cfg| cfg.anidb_password.clone()))
-            .or_else(|| config.as_ref().and_then(|cfg| cfg.anidb_api_key.clone()))
             .unwrap_or_default();
         let tvmaze_user_agent = Self::env_value("KAYABOT_TVMAZE_USER_AGENT")
             .or_else(|| Self::env_value("KAYABOT_TVMAZE_API_KEY"))
@@ -3035,31 +2883,20 @@ impl ApiConfig {
                     .as_ref()
                     .and_then(|keys| keys.tvmaze_user_agent.clone())
             })
-            .or_else(|| {
-                config
-                    .as_ref()
-                    .and_then(|cfg| cfg.tvmaze_user_agent.clone())
-            })
-            .or_else(|| config.as_ref().and_then(|cfg| cfg.tvmaze_api_key.clone()))
             .unwrap_or_else(|| "KayaBot".to_string());
 
         let config = Self {
             tmdb_token,
             tvdb_api_key,
             omdb_api_key,
-            anidb_api_key,
             tvmaze_user_agent,
         };
 
-        (config, load_status, api_keys_status, api_keys)
+        (config, api_keys_status, api_keys)
     }
 
     fn env_value(key: &str) -> Option<String> {
         env::var(key).ok().filter(|value| !value.trim().is_empty())
-    }
-
-    fn config_path() -> Option<PathBuf> {
-        config_root().map(|root| root.join("config.toml"))
     }
 
     fn tmdb_configured(&self) -> bool {
@@ -3072,65 +2909,6 @@ impl ApiConfig {
 
     fn omdb_configured(&self) -> bool {
         !self.omdb_api_key.trim().is_empty()
-    }
-
-    fn anidb_configured(&self) -> bool {
-        !self.anidb_api_key.trim().is_empty()
-    }
-}
-
-#[derive(Debug, Clone)]
-enum ConfigLoadState {
-    Loaded,
-    Missing,
-    Unreadable,
-}
-
-#[derive(Debug, Clone)]
-struct ConfigLoadStatus {
-    path: Option<PathBuf>,
-    state: ConfigLoadState,
-}
-
-impl ConfigLoadStatus {
-    fn loaded(path: Option<PathBuf>) -> Self {
-        Self {
-            path,
-            state: ConfigLoadState::Loaded,
-        }
-    }
-
-    fn missing(path: Option<PathBuf>) -> Self {
-        Self {
-            path,
-            state: ConfigLoadState::Missing,
-        }
-    }
-
-    fn unreadable(path: Option<PathBuf>) -> Self {
-        Self {
-            path,
-            state: ConfigLoadState::Unreadable,
-        }
-    }
-
-    fn message(&self) -> Option<String> {
-        match self.state {
-            ConfigLoadState::Loaded => None,
-            ConfigLoadState::Missing => {
-                Some(format!("config.toml introuvable{}", self.path_suffix()))
-            }
-            ConfigLoadState::Unreadable => {
-                Some(format!("config.toml illisible{}", self.path_suffix()))
-            }
-        }
-    }
-
-    fn path_suffix(&self) -> String {
-        self.path
-            .as_ref()
-            .map(|path| format!(", utilisé: {}", path.display()))
-            .unwrap_or_default()
     }
 }
 
@@ -3189,62 +2967,35 @@ impl ApiKeysLoadStatus {
     }
 }
 
-#[derive(Debug, Clone, serde::Deserialize, Default)]
-struct ConfigFile {
-    tmdb_bearer_token: Option<String>,
-    tmdb_api_key: Option<String>,
-    tvdb_api_key: Option<String>,
-    omdb_api_key: Option<String>,
-    anidb_password: Option<String>,
-    anidb_api_key: Option<String>,
-    tvmaze_user_agent: Option<String>,
-    tvmaze_api_key: Option<String>,
-}
-
-impl ConfigFile {
-    fn load() -> (Option<Self>, ConfigLoadStatus) {
-        let path = ApiConfig::config_path();
-        let Some(path) = path else {
-            return (None, ConfigLoadStatus::missing(None));
-        };
-        match fs::read_to_string(&path) {
-            Ok(contents) => match toml::from_str(&contents) {
-                Ok(config) => (Some(config), ConfigLoadStatus::loaded(Some(path))),
-                Err(_) => (None, ConfigLoadStatus::unreadable(Some(path))),
-            },
-            Err(err) => {
-                if err.kind() == io::ErrorKind::NotFound {
-                    (None, ConfigLoadStatus::missing(Some(path)))
-                } else {
-                    (None, ConfigLoadStatus::unreadable(Some(path)))
-                }
-            }
-        }
-    }
-}
-
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Default)]
 struct ApiKeysFile {
     tmdb_bearer_token: Option<String>,
     tmdb_api_key: Option<String>,
     tvdb_api_key: Option<String>,
     omdb_api_key: Option<String>,
-    anidb_api_key: Option<String>,
-    anidb_username: Option<String>,
     tvmaze_user_agent: Option<String>,
 }
 
 impl ApiKeysFile {
     fn load() -> (Option<Self>, ApiKeysLoadStatus) {
-        let path = ApiKeysFile::path();
-        let Some(path) = path else {
-            return (None, ApiKeysLoadStatus::missing(None));
-        };
+        match ApiKeysFile::path() {
+            Some(path) => Self::load_from(path),
+            None => (None, ApiKeysLoadStatus::missing(None)),
+        }
+    }
+
+    fn load_from(path: PathBuf) -> (Option<Self>, ApiKeysLoadStatus) {
         match fs::read_to_string(&path) {
-            Ok(contents) => match toml::from_str(&contents) {
-                Ok(config) => (Some(config), ApiKeysLoadStatus::loaded(Some(path))),
-                Err(_) => (None, ApiKeysLoadStatus::unreadable(Some(path))),
-            },
+            Ok(contents) => {
+                #[cfg(unix)]
+                if let Err(err) = restrict_to_owner(&path) {
+                    eprintln!("Failed to restrict {} to its owner: {err}", path.display());
+                }
+                match toml::from_str(&contents) {
+                    Ok(config) => (Some(config), ApiKeysLoadStatus::loaded(Some(path))),
+                    Err(_) => (None, ApiKeysLoadStatus::unreadable(Some(path))),
+                }
+            }
             Err(err) => {
                 if err.kind() == io::ErrorKind::NotFound {
                     (None, ApiKeysLoadStatus::missing(Some(path)))
@@ -3262,6 +3013,11 @@ impl ApiKeysFile {
                 "No config directory available",
             ));
         };
+        self.save_to(&path)?;
+        Ok(path)
+    }
+
+    fn save_to(&self, path: &Path) -> io::Result<()> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -3271,13 +3027,114 @@ impl ApiKeysFile {
                 format!("TOML encode error: {err}"),
             )
         })?;
-        fs::write(&path, payload)?;
-        Ok(path)
+        write_private_file(path, &payload)
     }
 
     fn path() -> Option<PathBuf> {
         config_root().map(|root| root.join("api_keys.toml"))
     }
+}
+
+/// Writes `contents` to a temporary file next to `path`, then renames it into
+/// place, so a crash never leaves a half-written file. On Unix the file is
+/// created readable by its owner only (0600).
+fn write_private_file(path: &Path, contents: &str) -> io::Result<()> {
+    use std::io::Write as _;
+
+    let temp_path = path.with_extension("toml.tmp");
+    // A leftover from an interrupted save may carry looser permissions.
+    let _ = fs::remove_file(&temp_path);
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    let mut file = options.open(&temp_path)?;
+    file.write_all(contents.as_bytes())?;
+    file.sync_all()?;
+    drop(file);
+    fs::rename(&temp_path, path)
+}
+
+/// Drops group and other permissions from a file written before KayaBot
+/// created it with mode 0600.
+#[cfg(unix)]
+fn restrict_to_owner(path: &Path) -> io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let mode = fs::metadata(path)?.permissions().mode() & 0o777;
+    let private = mode & 0o600;
+    if mode != private {
+        fs::set_permissions(path, fs::Permissions::from_mode(private))?;
+    }
+    Ok(())
+}
+
+/// Older versions also read API keys from config.toml. Moves any key found
+/// there into api_keys.toml, unless api_keys.toml already sets it, then drops
+/// every credential from config.toml.
+fn migrate_config_credentials(dir: &Path) -> io::Result<()> {
+    let config_path = dir.join("config.toml");
+    let contents = match fs::read_to_string(&config_path) {
+        Ok(contents) => contents,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(err) => return Err(err),
+    };
+    let mut config: toml::Table =
+        toml::from_str(&contents).map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
+    let entries_before = config.len();
+    let mut take = |key: &str| {
+        config
+            .remove(key)?
+            .as_str()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    };
+    let tmdb_bearer_token = take("tmdb_bearer_token");
+    let tmdb_api_key = take("tmdb_api_key");
+    let tvdb_api_key = take("tvdb_api_key");
+    let omdb_api_key = take("omdb_api_key");
+    let tvmaze_user_agent = take("tvmaze_user_agent");
+    let tvmaze_api_key = take("tvmaze_api_key");
+    // AniDB support is gone: drop its credentials rather than keep them.
+    take("anidb_password");
+    take("anidb_api_key");
+    if config.len() == entries_before {
+        return Ok(());
+    }
+
+    let keys_path = dir.join("api_keys.toml");
+    let mut keys: ApiKeysFile = match fs::read_to_string(&keys_path) {
+        Ok(contents) => toml::from_str(&contents)
+            .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => ApiKeysFile::default(),
+        Err(err) => return Err(err),
+    };
+    let mut moved = false;
+    let mut fill = |slot: &mut Option<String>, value: Option<String>| {
+        if slot.is_none() && value.is_some() {
+            *slot = value;
+            moved = true;
+        }
+    };
+    // Both TMDB fields resolve to one credential: move them only as a pair.
+    if keys.tmdb_bearer_token.is_none() && keys.tmdb_api_key.is_none() {
+        fill(&mut keys.tmdb_bearer_token, tmdb_bearer_token);
+        fill(&mut keys.tmdb_api_key, tmdb_api_key);
+    }
+    fill(&mut keys.tvdb_api_key, tvdb_api_key);
+    fill(&mut keys.omdb_api_key, omdb_api_key);
+    fill(
+        &mut keys.tvmaze_user_agent,
+        tvmaze_user_agent.or(tvmaze_api_key),
+    );
+    if moved {
+        keys.save_to(&keys_path)?;
+    }
+
+    let remaining = toml::to_string_pretty(&config)
+        .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
+    write_private_file(&config_path, &remaining)
 }
 
 #[derive(Debug, Clone)]
@@ -3286,8 +3143,6 @@ struct ApiKeysForm {
     tmdb_api_key: String,
     tvdb_api_key: String,
     omdb_api_key: String,
-    anidb_api_key: String,
-    anidb_username: String,
     tvmaze_user_agent: String,
 }
 
@@ -3299,8 +3154,6 @@ impl ApiKeysForm {
             tmdb_api_key: api_keys.tmdb_api_key.unwrap_or_default(),
             tvdb_api_key: api_keys.tvdb_api_key.unwrap_or_default(),
             omdb_api_key: api_keys.omdb_api_key.unwrap_or_default(),
-            anidb_api_key: api_keys.anidb_api_key.unwrap_or_default(),
-            anidb_username: api_keys.anidb_username.unwrap_or_default(),
             tvmaze_user_agent: api_keys.tvmaze_user_agent.unwrap_or_default(),
         }
     }
@@ -3311,8 +3164,6 @@ impl ApiKeysForm {
             tmdb_api_key: Self::to_option(&self.tmdb_api_key),
             tvdb_api_key: Self::to_option(&self.tvdb_api_key),
             omdb_api_key: Self::to_option(&self.omdb_api_key),
-            anidb_api_key: Self::to_option(&self.anidb_api_key),
-            anidb_username: Self::to_option(&self.anidb_username),
             tvmaze_user_agent: Self::to_option(&self.tvmaze_user_agent),
         }
     }
@@ -3983,6 +3834,12 @@ impl ListItem for NewNameRow {
 }
 
 fn main() -> eframe::Result<()> {
+    if let Some(dir) = config_root()
+        && let Err(err) = migrate_config_credentials(&dir)
+    {
+        eprintln!("Failed to move API keys out of config.toml: {err}");
+    }
+
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size(Vec2::new(1100.0, 650.0))
@@ -4261,6 +4118,82 @@ mod tests {
         let rows: Vec<serde_json::Value> = serde_json::from_str(&json_output).expect("parse json");
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0]["status"], "ok");
+
+        fs::remove_dir_all(&temp).expect("temp dir cleanup");
+    }
+
+    #[test]
+    fn config_credentials_move_into_api_keys() {
+        let temp = temp_dir("migrate");
+        fs::write(
+            temp.join("config.toml"),
+            "omdb_api_key = \"omdb-from-config\"\n\
+             tvdb_api_key = \"tvdb-from-config\"\n\
+             tvmaze_api_key = \"agent-from-config\"\n\
+             anidb_password = \"anidb-password\"\n\
+             original_files = []\n\
+             [format_options]\n\
+             include_episode_title = true\n",
+        )
+        .expect("write config.toml");
+        fs::write(temp.join("api_keys.toml"), "tvdb_api_key = \"tvdb-kept\"\n")
+            .expect("write api_keys.toml");
+
+        migrate_config_credentials(&temp).expect("migration");
+
+        let (keys, _) = ApiKeysFile::load_from(temp.join("api_keys.toml"));
+        let keys = keys.expect("api_keys.toml parses");
+        assert_eq!(keys.omdb_api_key.as_deref(), Some("omdb-from-config"));
+        assert_eq!(keys.tvdb_api_key.as_deref(), Some("tvdb-kept"));
+        assert_eq!(keys.tvmaze_user_agent.as_deref(), Some("agent-from-config"));
+        let config = fs::read_to_string(temp.join("config.toml")).expect("read config.toml");
+        for gone in ["from-config", "anidb", "api_key"] {
+            assert!(
+                !config.contains(gone),
+                "{gone} left in config.toml:\n{config}"
+            );
+        }
+        assert!(config.contains("original_files"), "{config}");
+        assert!(config.contains("include_episode_title"), "{config}");
+
+        // A second start finds nothing left to move.
+        migrate_config_credentials(&temp).expect("second migration");
+        assert_eq!(
+            fs::read_to_string(temp.join("config.toml")).expect("read config.toml"),
+            config
+        );
+
+        fs::remove_dir_all(&temp).expect("temp dir cleanup");
+    }
+
+    #[test]
+    fn migration_without_config_toml_writes_nothing() {
+        let temp = temp_dir("migrate-none");
+
+        migrate_config_credentials(&temp).expect("migration");
+
+        assert!(!temp.join("api_keys.toml").exists());
+        assert!(!temp.join("config.toml").exists());
+        fs::remove_dir_all(&temp).expect("temp dir cleanup");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn api_keys_file_is_readable_by_its_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = temp_dir("api-keys-mode");
+        let path = temp.join("api_keys.toml");
+        let mode = |path: &Path| fs::metadata(path).expect("metadata").permissions().mode() & 0o777;
+
+        ApiKeysFile::default().save_to(&path).expect("save");
+        assert_eq!(mode(&path), 0o600);
+
+        // A file written by an older version gets tightened on load.
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).expect("chmod");
+        let (keys, _) = ApiKeysFile::load_from(path.clone());
+        assert!(keys.is_some());
+        assert_eq!(mode(&path), 0o600);
 
         fs::remove_dir_all(&temp).expect("temp dir cleanup");
     }
