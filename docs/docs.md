@@ -15,6 +15,10 @@ Ce dossier rassemble la documentation fonctionnelle et technique de KayaBot.
 - `src/main.rs` porte l'application eframe/egui et l'état principal (`RenameApp`).
 - L'interface actuelle propose une vue "Rename" avec deux listes (fichiers d'origine / nouveaux noms), un panneau d'action (Match/Rename) et un menu de sélection de source de métadonnées.
 
+### Rename engine
+
+- `src/rename.rs` builds the target path next to the original, picks the first free name (` (1)`, ` (2)` and so on, up to 9999) and renames the file. It never overwrites an existing file. A case-only rename goes through a temporary name; a move across devices copies into a new file, syncs it, then removes the original.
+
 ### Matching & parsing
 
 - `src/matching/parsing.rs` implémente un parseur heuristique (SxxExx, 1x02, année, tokens).
