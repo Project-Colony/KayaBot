@@ -29,6 +29,9 @@ You need a recent stable Rust toolchain (Rust 1.88 or newer).
 cargo run --release
 ```
 
+`kayabot --version` (or `-V`) prints the version and exits without opening a
+window.
+
 ## Configuration
 
 KayaBot stores its files in:
