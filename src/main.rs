@@ -3772,6 +3772,10 @@ mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    use crate::metadata::error::MetadataError;
+    use crate::metadata::models::{EpisodeMatch, MetadataExtras, MovieMatch, TitleMatch};
+    use crate::metadata::provider::MetadataProvider;
+
     #[test]
     fn wants_version_only_for_a_leading_version_flag() {
         let argv = |args: &[&str]| {
@@ -3788,10 +3792,6 @@ mod tests {
         assert!(!wants_version(argv(&["kayabot", "--versions"])));
         assert!(!wants_version(argv(&["kayabot", "movie.mkv", "--version"])));
     }
-
-    use crate::metadata::error::MetadataError;
-    use crate::metadata::models::{EpisodeMatch, MetadataExtras, MovieMatch, TitleMatch};
-    use crate::metadata::provider::MetadataProvider;
 
     struct MockProvider {
         title_match: TitleMatch,
