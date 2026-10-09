@@ -92,13 +92,7 @@ impl TvMazeClient {
             .headers(self.headers()?)
             .query(query)
             .send()
-            .map_err(|err| {
-                if err.is_timeout() {
-                    MetadataError::Network("TVmaze request timed out.".to_string())
-                } else {
-                    MetadataError::Network(format!("TVmaze request failed: {err}"))
-                }
-            })?;
+            .map_err(|err| super::request_error("TVmaze", err))?;
         let status = response.status();
         if status == reqwest::StatusCode::NOT_FOUND {
             return Err(MetadataError::NotFound(
@@ -115,9 +109,9 @@ impl TvMazeClient {
                 "TVmaze returned status {status}."
             )));
         }
-        response.json::<T>().map_err(|err| {
-            MetadataError::InvalidResponse(format!("Failed to parse TVmaze response: {err}"))
-        })
+        response
+            .json::<T>()
+            .map_err(|err| super::parse_error("TVmaze", err))
     }
 
     fn search_shows(&self, query: &str) -> Result<Vec<TvMazeSearchResult>, MetadataError> {

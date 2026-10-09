@@ -86,13 +86,7 @@ impl OmdbClient {
             .header(reqwest::header::ACCEPT, "application/json")
             .query(query)
             .send()
-            .map_err(|err| {
-                if err.is_timeout() {
-                    MetadataError::Network("OMDb request timed out.".to_string())
-                } else {
-                    MetadataError::Network(format!("OMDb request failed: {err}"))
-                }
-            })?;
+            .map_err(|err| super::request_error("OMDb", err))?;
         let status = response.status();
         if status == reqwest::StatusCode::NOT_FOUND {
             return Err(MetadataError::NotFound(
@@ -109,9 +103,9 @@ impl OmdbClient {
                 "OMDb returned status {status}."
             )));
         }
-        response.json::<T>().map_err(|err| {
-            MetadataError::InvalidResponse(format!("Failed to parse OMDb response: {err}"))
-        })
+        response
+            .json::<T>()
+            .map_err(|err| super::parse_error("OMDb", err))
     }
 
     fn search_titles(&self, query: &str) -> Result<Vec<OmdbSearchItem>, MetadataError> {
@@ -304,5 +298,19 @@ mod tests {
             normalized.extras.external_ids.imdb.as_deref(),
             Some("tt1234567")
         );
+    }
+
+    #[test]
+    fn request_error_does_not_contain_the_api_key() {
+        // The key travels in the query string, and reqwest error messages
+        // include the request URL unless it is stripped.
+        let mut client = OmdbClient::new("omdb-secret-key");
+        client.base_url = super::super::tests::closed_local_url();
+        let err = client
+            .search_title("Example")
+            .expect_err("nothing listens there");
+        let message = err.to_string();
+        assert!(message.contains("OMDb request failed"), "{message}");
+        assert!(!message.contains("omdb-secret-key"), "{message}");
     }
 }

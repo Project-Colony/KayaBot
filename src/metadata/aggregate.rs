@@ -337,9 +337,6 @@ fn external_id_keys(ids: &ExternalIds) -> Vec<String> {
     if let Some(tvmaze) = &ids.tvmaze {
         keys.push(format!("tvmaze:{tvmaze}"));
     }
-    if let Some(anidb) = &ids.anidb {
-        keys.push(format!("anidb:{anidb}"));
-    }
     if let Some(omdb) = &ids.omdb {
         keys.push(format!("omdb:{omdb}"));
     }
@@ -397,9 +394,6 @@ fn merge_external_ids(target: &mut ExternalIds, incoming: &ExternalIds) {
     }
     if target.tvmaze.is_none() {
         target.tvmaze = incoming.tvmaze.clone();
-    }
-    if target.anidb.is_none() {
-        target.anidb = incoming.anidb.clone();
     }
     if target.omdb.is_none() {
         target.omdb = incoming.omdb.clone();
@@ -579,18 +573,18 @@ mod tests {
             Err(MetadataError::Other("no titles".to_string())),
             Ok(vec![episode_match("ep1", 1, 1)]),
         );
-        let anidb = MockProvider::new(
+        let tmdb = MockProvider::new(
             Err(MetadataError::Other("no titles".to_string())),
             Err(MetadataError::NotFound("missing".to_string())),
         );
         let tvdb_calls = tvdb.episode_calls.clone();
         let tvmaze_calls = tvmaze.episode_calls.clone();
-        let anidb_calls = anidb.episode_calls.clone();
+        let tmdb_calls = tmdb.episode_calls.clone();
 
         let mut pipeline = MetadataPipeline::new(vec![
             (MetadataSource::TheTvDb, Box::new(tvdb)),
             (MetadataSource::TvMaze, Box::new(tvmaze)),
-            (MetadataSource::AniDb, Box::new(anidb)),
+            (MetadataSource::TheMovieDb, Box::new(tmdb)),
         ]);
 
         let results = pipeline.fetch_episode_list("halo").expect("episode list");
@@ -598,7 +592,7 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(tvdb_calls.load(Ordering::SeqCst), 1);
         assert_eq!(tvmaze_calls.load(Ordering::SeqCst), 1);
-        assert_eq!(anidb_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(tmdb_calls.load(Ordering::SeqCst), 0);
         assert_eq!(pipeline.active_source(), MetadataSource::TvMaze);
     }
 }

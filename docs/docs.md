@@ -46,7 +46,7 @@ Formats finaux (et fallbacks) :
 
 - `src/metadata/provider.rs` définit l'interface `MetadataProvider` et l'énumération `MetadataSource`.
 - `src/metadata/aggregate.rs` implémente `MetadataPipeline`, qui orchestre plusieurs providers et agrège les résultats.
-- Les clients réels sont dans `src/metadata/providers/` (`tmdb.rs`, `thetvdb.rs`, `tvmaze.rs`, `omdb.rs`, `anidb.rs`).
+- Les clients réels sont dans `src/metadata/providers/` (`tmdb.rs`, `thetvdb.rs`, `tvmaze.rs`, `omdb.rs`).
 - `src/metadata/filebot_like.rs` reste un provider en mémoire avec cache local (`MetadataCache`), utile pour le mock et l'outillage.
 - `src/metadata/models.rs` définit les types `TitleMatch`, `MovieMatch`, `EpisodeMatch` ainsi que les modèles normalisés (`NormalizedTitle`, `NormalizedEpisode`).
 
@@ -66,7 +66,6 @@ Les tableaux ci-dessous listent les champs requis vs optionnels pour alimenter l
 | --- | --- | --- |
 | TheMovieDB | `title`, `source_id` | `release_year`, `imdb_id`, `extras.aliases`, `extras.language`, `extras.genres`, `extras.external_ids`, `extras.synopsis` |
 | OMDb | `title`, `source_id` | `release_year`, `imdb_id`, `extras.aliases`, `extras.language`, `extras.genres`, `extras.external_ids`, `extras.synopsis` |
-| AniDB | `title`, `source_id` | `release_year`, `imdb_id`, `extras.aliases`, `extras.language`, `extras.genres`, `extras.external_ids`, `extras.synopsis` |
 
 ##### Séries / épisodes (format cible : `Series Title`, `Season`, `Episode`, `Episode Title`, `Release Year`, `IMDb ID`, extras)
 
@@ -74,10 +73,8 @@ Les tableaux ci-dessous listent les champs requis vs optionnels pour alimenter l
 | --- | --- | --- |
 | TheTVDB | `series_title`, `series_id`, `season`, `episode` | `episode_title`, `release_year`, `imdb_id`, `extras.aliases`, `extras.language`, `extras.genres`, `extras.external_ids`, `extras.synopsis` |
 | TVmaze | `series_title`, `series_id`, `season`, `episode` | `episode_title`, `release_year`, `imdb_id`, `extras.aliases`, `extras.language`, `extras.genres`, `extras.external_ids`, `extras.synopsis` |
-| AniDB | `series_title`, `series_id`, `season`, `episode` | `episode_title`, `release_year`, `imdb_id`, `extras.aliases`, `extras.language`, `extras.genres`, `extras.external_ids`, `extras.synopsis` |
 
 Remarques :
-- Les films n'utilisent pas AniDB dans l'UI actuelle, mais la table fixe les champs attendus si l'intégration est ajoutée.
 - Les champs optionnels peuvent déclencher des fallbacks de formatage (ex: absence de `release_year` ou `episode_title`).
 
 #### Mapping source → modèle interne (normalisé)
@@ -104,15 +101,6 @@ Ce mapping décrit les correspondances minimales à appliquer lors de l'impléme
 - `Genre` → `extras.genres` (liste scindée par virgule)
 - `Plot` → `extras.synopsis`
 - `Ratings[]` → `source_score` (normalisé), combiné avec `source_trust` pour `global_score`
-
-##### AniDB (film/série)
-- `anime_id` → `source_id` / `series_id`
-- `title` → `title` / `series_title`
-- `year` → `release_year`
-- `aliases` → `extras.aliases`
-- `language` → `extras.language`
-- `tags`/`genres` → `extras.genres`
-- `description` → `extras.synopsis`
 
 ##### TheTVDB (série/épisode)
 - `series.id` → `series_id`
@@ -145,7 +133,7 @@ Ce mapping décrit les correspondances minimales à appliquer lors de l'impléme
 
 1. L'utilisateur charge une liste de fichiers (UI en cours d'intégration).
 2. "Match" applique le parsing heuristique et alimente les suggestions.
-3. "Fetch Data" interroge les providers actifs (TMDB/TheTVDB/TVmaze/OMDb/AniDB).
+3. "Fetch Data" interroge les providers actifs (TMDB/TheTVDB/TVmaze/OMDb).
 4. "Rename" simule le renommage et affiche un bilan.
 
 ## Tests & validation
@@ -159,8 +147,7 @@ Les clés API peuvent être définies dans le fichier
 `~/.config/Colony/KayaBot/api_keys.toml` (ou `AppData/Local/Colony/KayaBot/api_keys.toml` sur Windows) ou via des variables d’environnement
 (les variables d’environnement ont priorité sur les fichiers).
 
-Le fichier `config.toml` est utilisé par l'application pour persister la file
-et les options de formatage. `preferences.toml` conserve les préférences UI
+`preferences.toml` conserve les préférences UI
 (thème, langue/locale, densité, options d'expérience). `format_options.toml`
 contient le dernier template de formatage choisi.
 
@@ -170,7 +157,6 @@ Exemple de configuration :
 tmdb_bearer_token = "..."
 tvdb_api_key = "..."
 omdb_api_key = "..."
-anidb_api_key = "..."
 tvmaze_user_agent = "KayaBot"
 ```
 
@@ -179,5 +165,4 @@ Variables d’environnement supportées :
 - `KAYABOT_TMDB_BEARER_TOKEN` (ou `KAYABOT_TMDB_API_KEY`)
 - `KAYABOT_TVDB_API_KEY`
 - `KAYABOT_OMDB_API_KEY`
-- `KAYABOT_ANIDB_PASSWORD` (ou `KAYABOT_ANIDB_API_KEY`)
 - `KAYABOT_TVMAZE_USER_AGENT` (ou `KAYABOT_TVMAZE_API_KEY`)

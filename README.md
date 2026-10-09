@@ -5,8 +5,8 @@ movie and TV episode file names, matches them against online metadata sources
 and renames the files to a consistent format, in the spirit of FileBot.
 
 > **Status:** early prototype. The Rename view works end to end: file name
-> parsing, matching against TMDB, TheTVDB, TVmaze, OMDb and AniDB with
-> fallback, a preview, a dry run, the rename itself and CSV/JSON export. The
+> parsing, matching against TMDB, TheTVDB, TVmaze and OMDb with fallback,
+> a preview, a dry run, the rename itself and CSV/JSON export. The
 > Episodes, Subtitles, SFV and Filter screens are placeholders, and some
 > preferences are saved but not used yet. There is no release yet.
 
@@ -37,13 +37,14 @@ KayaBot stores its files in:
 - Windows: `%LOCALAPPDATA%\Colony\KayaBot\`
 
 Put API keys in `api_keys.toml` in that folder, or set them as environment
-variables. Environment variables take precedence over the files.
+variables. Environment variables take precedence over the file. For TMDB, use
+either a v4 read access token or a v3 API key. Keys that older versions read
+from `config.toml` are moved to `api_keys.toml` on start.
 
 ```toml
 tmdb_bearer_token = "..."
 tvdb_api_key = "..."
 omdb_api_key = "..."
-anidb_api_key = "..."
 tvmaze_user_agent = "KayaBot"
 ```
 
@@ -52,9 +53,10 @@ Supported environment variables are listed in [`.env.example`](.env.example).
 ## Privacy
 
 To find metadata, KayaBot sends the titles, years and episode numbers it parses
-from your file names to the providers you configure: TMDB, TheTVDB, TVmaze,
-OMDb and AniDB. API keys are stored in plain text in `api_keys.toml`. Metadata
-responses are cached in `metadata_cache.json` in the configuration folder.
+from your file names to the providers you configure: TMDB, TheTVDB, TVmaze
+and OMDb. API keys are stored in plain text in `api_keys.toml`, which only
+your user account can read on Linux and macOS. Metadata responses are cached
+in `metadata_cache.json` in the configuration folder.
 
 ## Documentation
 

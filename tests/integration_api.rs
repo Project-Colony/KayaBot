@@ -1,17 +1,18 @@
 use std::env;
 
+use kayabot::metadata::provider::MetadataProvider;
 use kayabot::metadata::providers::{omdb::OmdbClient, thetvdb::TheTvDbClient, tmdb::TmdbClient};
 
+/// Accepts either a v3 API key or a v4 read access token.
 #[test]
 #[ignore = "requires TMDB_API_KEY"]
-fn tmdb_headers_include_api_key() {
+fn tmdb_search_accepts_the_configured_key() {
     let key = env::var("TMDB_API_KEY").expect("TMDB_API_KEY must be set");
-    let client = TmdbClient::new(key.clone(), None);
-    let headers = client.auth_headers();
-    let auth_header = headers
-        .get("Authorization")
-        .expect("Authorization header missing");
-    assert!(auth_header.contains(&key));
+    let mut client = TmdbClient::new(key, None);
+    let results = client
+        .search_title("Breaking Bad")
+        .expect("TMDB search failed");
+    assert!(!results.is_empty());
 }
 
 #[test]

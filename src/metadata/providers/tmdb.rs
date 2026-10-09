@@ -69,12 +69,21 @@ impl TmdbClient {
 
     pub fn auth_headers(&self) -> HashMap<String, String> {
         let mut headers = HashMap::new();
-        headers.insert(
-            "Authorization".to_string(),
-            format!("Bearer {}", self.api_key),
-        );
+        if self.uses_read_token() {
+            headers.insert(
+                "Authorization".to_string(),
+                format!("Bearer {}", self.api_key),
+            );
+        }
         headers.insert("Accept".to_string(), "application/json".to_string());
         headers
+    }
+
+    /// A v4 read access token is a JWT and goes in the `Authorization`
+    /// header. Anything else is a v3 API key, which TMDB only accepts as the
+    /// `api_key` query parameter.
+    fn uses_read_token(&self) -> bool {
+        self.api_key.starts_with("eyJ")
     }
 
     fn http_client(&self) -> Result<reqwest::blocking::Client, MetadataError> {
@@ -91,12 +100,14 @@ impl TmdbClient {
             ));
         }
         let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert(
-            reqwest::header::AUTHORIZATION,
-            format!("Bearer {}", self.api_key)
-                .parse()
-                .map_err(|err| MetadataError::Other(format!("Invalid TMDB auth header: {err}")))?,
-        );
+        if self.uses_read_token() {
+            headers.insert(
+                reqwest::header::AUTHORIZATION,
+                format!("Bearer {}", self.api_key).parse().map_err(|err| {
+                    MetadataError::Other(format!("Invalid TMDB auth header: {err}"))
+                })?,
+            );
+        }
         headers.insert(
             reqwest::header::ACCEPT,
             "application/json".parse().map_err(|err| {
@@ -169,6 +180,9 @@ impl TmdbClient {
             .iter()
             .map(|(key, value)| (key.to_string(), value.to_string()))
             .collect();
+        if !self.uses_read_token() {
+            merged.push(("api_key".to_string(), self.api_key.clone()));
+        }
         let (language, region) = self.tmdb_locale();
         if let Some(language) = language {
             merged.push(("language".to_string(), language));
@@ -192,13 +206,7 @@ impl TmdbClient {
             .headers(self.headers()?)
             .query(&self.build_query(query, allow_region))
             .send()
-            .map_err(|err| {
-                if err.is_timeout() {
-                    MetadataError::Network("TMDB request timed out.".to_string())
-                } else {
-                    MetadataError::Network(format!("TMDB request failed: {err}"))
-                }
-            })?;
+            .map_err(|err| super::request_error("TMDB", err))?;
         let status = response.status();
         if status == reqwest::StatusCode::UNAUTHORIZED {
             return Err(MetadataError::Other(
@@ -220,9 +228,9 @@ impl TmdbClient {
                 "TMDB returned status {status}."
             )));
         }
-        response.json::<T>().map_err(|err| {
-            MetadataError::InvalidResponse(format!("Failed to parse TMDB response: {err}"))
-        })
+        response
+            .json::<T>()
+            .map_err(|err| super::parse_error("TMDB", err))
     }
 
     fn search_titles(&self, query: &str) -> Result<Vec<TmdbTitle>, MetadataError> {
@@ -488,5 +496,41 @@ mod tests {
         assert_eq!(normalized.name, "Spirited Away");
         assert_eq!(normalized.year, Some(2001));
         assert!(normalized.extras.aliases.is_empty());
+    }
+
+    #[test]
+    fn read_token_goes_in_the_header_and_v3_key_in_the_query() {
+        let token = "eyJhbGciOiJIUzI1NiJ9.e30.signature";
+        let v4 = TmdbClient::new(token, None);
+        let headers = v4.headers().expect("headers");
+        assert_eq!(
+            headers[reqwest::header::AUTHORIZATION],
+            format!("Bearer {token}")
+        );
+        assert!(
+            !v4.build_query(&[], false)
+                .iter()
+                .any(|(key, _)| key == "api_key")
+        );
+
+        let v3 = TmdbClient::new("0123456789abcdef", None);
+        let headers = v3.headers().expect("headers");
+        assert!(headers.get(reqwest::header::AUTHORIZATION).is_none());
+        assert!(
+            v3.build_query(&[], false)
+                .contains(&("api_key".to_string(), "0123456789abcdef".to_string()))
+        );
+    }
+
+    #[test]
+    fn request_error_does_not_contain_the_v3_key() {
+        let mut client = TmdbClient::new("tmdb-secret-key", None);
+        client.base_url = super::super::tests::closed_local_url();
+        let err = client
+            .search_title("Example")
+            .expect_err("nothing listens there");
+        let message = err.to_string();
+        assert!(message.contains("TMDB request failed"), "{message}");
+        assert!(!message.contains("tmdb-secret-key"), "{message}");
     }
 }

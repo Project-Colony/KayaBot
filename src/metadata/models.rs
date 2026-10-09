@@ -8,7 +8,6 @@ pub struct ExternalIds {
     pub tmdb: Option<String>,
     pub tvdb: Option<String>,
     pub tvmaze: Option<String>,
-    pub anidb: Option<String>,
     pub omdb: Option<String>,
     pub other: Vec<ExternalId>,
 }
