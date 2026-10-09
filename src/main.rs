@@ -9,6 +9,7 @@ use eframe::egui::{
 use formatting::{
     DEFAULT_MOVIE_FORMAT, DEFAULT_SERIES_FORMAT, FormatOptions, MovieFormatInput, SeriesFormatInput,
 };
+use kayabot::rename::{self, RenameOutcome};
 use matching::ContentType;
 use metadata::aggregate::MetadataPipeline;
 use metadata::locale::MetadataLocale;
@@ -58,15 +59,6 @@ enum RenameUiState {
     Success(usize),
     Error(String),
     Empty,
-}
-
-#[derive(Debug, Clone)]
-enum RenameOutcome {
-    Renamed,
-    DryRun,
-    Unchanged,
-    Skipped(String),
-    Failed(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1441,123 +1433,19 @@ impl RenameApp {
             );
         }
 
-        let target_path = self.build_target_path(&original_path, &preview);
-        let (resolved_path, collision_adjusted) =
-            self.resolve_collision(&target_path, used_targets);
-        let resolved_string = resolved_path.display().to_string();
-        used_targets.insert(resolved_path.clone());
-
-        if resolved_path == original_path {
-            return self.build_rename_summary(
-                original,
-                resolved_string,
-                collision_adjusted,
-                RenameOutcome::Unchanged,
-            );
-        }
-
-        if self.rename_dry_run {
-            return self.build_rename_summary(
-                original,
-                resolved_string,
-                collision_adjusted,
-                RenameOutcome::DryRun,
-            );
-        }
-
-        match self.rename_file(&original_path, &resolved_path) {
-            Ok(()) => {
-                if let Some(slot) = updated_files.get_mut(index) {
-                    *slot = resolved_string.clone();
-                }
-                self.build_rename_summary(
-                    original,
-                    resolved_string,
-                    collision_adjusted,
-                    RenameOutcome::Renamed,
-                )
-            }
-            Err(err) => self.build_rename_summary(
-                original,
-                resolved_string,
-                collision_adjusted,
-                RenameOutcome::Failed(err),
-            ),
-        }
-    }
-
-    fn build_target_path(&self, original: &Path, preview: &str) -> PathBuf {
-        let parent = original.parent().unwrap_or_else(|| Path::new(""));
-        let extension = original.extension().and_then(|ext| ext.to_str());
-        let file_name = match extension {
-            Some(ext) => {
-                let ext_suffix = format!(".{ext}");
-                if preview.to_lowercase().ends_with(&ext_suffix.to_lowercase()) {
-                    preview.to_string()
-                } else {
-                    format!("{preview}{ext_suffix}")
-                }
-            }
-            None => preview.to_string(),
-        };
-        parent.join(file_name)
-    }
-
-    fn resolve_collision(&self, target: &Path, used_targets: &HashSet<PathBuf>) -> (PathBuf, bool) {
-        if !target.exists() && !used_targets.contains(target) {
-            return (target.to_path_buf(), false);
-        }
-
-        let parent = target.parent().unwrap_or_else(|| Path::new(""));
-        let stem = target
-            .file_stem()
-            .and_then(|value| value.to_str())
-            .unwrap_or("file");
-        let extension = target.extension().and_then(|value| value.to_str());
-
-        for suffix in 1..=9999 {
-            let file_name = match extension {
-                Some(ext) => format!("{stem} ({suffix}).{ext}"),
-                None => format!("{stem} ({suffix})"),
-            };
-            let candidate = parent.join(file_name);
-            if !candidate.exists() && !used_targets.contains(&candidate) {
-                return (candidate, true);
-            }
-        }
-
-        (target.to_path_buf(), true)
-    }
-
-    fn rename_file(&self, original: &Path, target: &Path) -> Result<(), String> {
-        if let Err(err) = fs::rename(original, target) {
-            if let Err(copy_err) = fs::copy(original, target) {
-                return Err(format!("Copie impossible: {copy_err}"));
-            }
-            if let Err(remove_err) = fs::remove_file(original) {
-                return Err(format!("Suppression impossible: {remove_err}"));
-            }
-            if !Self::is_cross_device_link(&err) {
-                eprintln!("Renommage direct échoué ({err}), copie + suppression appliquées.");
-            }
-        }
-        Ok(())
-    }
-
-    fn is_cross_device_link(err: &std::io::Error) -> bool {
-        #[cfg(unix)]
+        let report = rename::apply(&original_path, &preview, used_targets, self.rename_dry_run);
+        let resolved_string = report.target.display().to_string();
+        if matches!(report.outcome, RenameOutcome::Renamed)
+            && let Some(slot) = updated_files.get_mut(index)
         {
-            err.raw_os_error() == Some(18)
+            *slot = resolved_string.clone();
         }
-        #[cfg(windows)]
-        {
-            err.raw_os_error() == Some(17)
-        }
-        #[cfg(not(any(unix, windows)))]
-        {
-            let _ = err;
-            false
-        }
+        self.build_rename_summary(
+            original,
+            resolved_string,
+            report.collision_adjusted,
+            report.outcome,
+        )
     }
 
     fn rename_feedback_label(&self) -> String {

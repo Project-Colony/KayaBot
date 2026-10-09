@@ -15,7 +15,8 @@ and renames the files to a consistent format, in the spirit of FileBot.
 - Parses file names (`S01E02`, `1x02`, year, quality tags and so on).
 - Queries several metadata providers in parallel and keeps the best match.
 - Previews new names from default or custom templates for series and movies.
-- Renames files with dry run and collision handling.
+- Renames files with a dry run and collision handling. It never overwrites
+  an existing file: a taken name gets a ` (1)` suffix.
 - Caches metadata responses locally.
 - Ships a small CLI, `preload_metadata_cache`, to seed the cache from a JSON
   file (`--help` for the format).
