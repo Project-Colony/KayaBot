@@ -17,7 +17,7 @@ Ce dossier rassemble la documentation fonctionnelle et technique de KayaBot.
 
 ### Rename engine
 
-- `src/rename.rs` builds the target path next to the original, picks the first free name (` (1)`, ` (2)` and so on, up to 9999) and renames the file. It never overwrites an existing file. A case-only rename goes through a temporary name; a move across devices copies into a new file, syncs it, then removes the original.
+- `src/rename.rs` builds the target path next to the original, picks the first free name (` (1)`, ` (2)` and so on, up to 9999) and renames the file. It never overwrites an existing file, a hard link to the original included. Two files of one batch never get names that differ only in letter case. A case-only rename goes through a temporary name; a move across devices copies into a new file, syncs it, then removes the original.
 
 ### Matching & parsing
 

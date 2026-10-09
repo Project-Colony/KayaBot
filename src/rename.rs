@@ -31,8 +31,9 @@ pub struct RenameReport {
 /// Renames `original` to `new_name` in the same folder.
 ///
 /// `used_targets` holds the targets already claimed by earlier files of the
-/// batch, so two files never get the same name. A dry run resolves the target
-/// and touches nothing.
+/// batch, case-folded, so two files never get the same name, even on a
+/// case-insensitive file system. A dry run resolves the target and touches
+/// nothing.
 pub fn apply(
     original: &Path,
     new_name: &str,
@@ -50,7 +51,7 @@ pub fn apply(
             };
         }
     };
-    used_targets.insert(target.clone());
+    used_targets.insert(fold_case(&target));
 
     let outcome = if target == original {
         RenameOutcome::Unchanged
@@ -93,8 +94,8 @@ pub fn build_target_path(original: &Path, new_name: &str) -> PathBuf {
 
 /// The first free name among `target`, `target (1)`, `target (2)` and so on,
 /// and whether a suffix was needed. A name is taken when another file has it
-/// on disk or an earlier file of the batch claimed it; `original` itself does
-/// not count, so an already named file stays put.
+/// on disk or an earlier file of the batch claimed it in any letter case;
+/// `original` itself does not count, so an already named file stays put.
 pub fn resolve_collision(
     original: &Path,
     target: &Path,
@@ -110,8 +111,8 @@ fn resolve_collision_within(
     limit: u32,
 ) -> io::Result<(PathBuf, bool)> {
     let taken = |candidate: &Path| -> io::Result<bool> {
-        Ok(used_targets.contains(candidate)
-            || (occupied(candidate)? && !is_same_file(original, candidate)))
+        Ok(used_targets.contains(&fold_case(candidate))
+            || (occupied(candidate)? && !is_original(original, candidate)))
     };
     if !taken(target)? {
         return Ok((target.to_path_buf(), false));
@@ -154,7 +155,7 @@ pub fn rename_file(original: &Path, target: &Path) -> io::Result<()> {
         return Ok(());
     }
     if occupied(target)? {
-        if is_same_file(original, target) {
+        if is_original(original, target) {
             return rename_through_temp(original, target);
         }
         return Err(already_exists(target));
@@ -253,8 +254,20 @@ fn occupied(path: &Path) -> io::Result<bool> {
     }
 }
 
-/// Whether both paths name the same directory entry, as two spellings that
-/// differ only in case do on a case-insensitive file system.
+/// The batch key of a target: names that differ only in letter case are one
+/// name on a case-insensitive file system.
+fn fold_case(path: &Path) -> PathBuf {
+    PathBuf::from(path.to_string_lossy().to_lowercase())
+}
+
+/// Whether `candidate` is `original` itself, maybe spelled in another letter
+/// case. A hard link under another name is a different file.
+fn is_original(original: &Path, candidate: &Path) -> bool {
+    fold_case(original) == fold_case(candidate) && is_same_file(original, candidate)
+}
+
+/// Whether both paths name the same file, as two spellings that differ only
+/// in case do on a case-insensitive file system.
 #[cfg(unix)]
 fn is_same_file(a: &Path, b: &Path) -> bool {
     use std::os::unix::fs::MetadataExt;
@@ -347,14 +360,20 @@ mod tests {
     #[test]
     fn a_name_claimed_earlier_in_the_batch_is_taken() {
         let dir = temp_dir("batch");
-        let original = dir.join("a.mkv");
-        fs::write(&original, "a").unwrap();
-        let mut used = HashSet::from([dir.join("b.mkv")]);
+        fs::write(dir.join("a.mkv"), "a").unwrap();
+        fs::write(dir.join("c.mkv"), "c").unwrap();
+        fs::write(dir.join("d.mkv"), "d").unwrap();
+        let mut used = HashSet::new();
 
-        let report = apply(&original, "b", &mut used, true);
+        let first = apply(&dir.join("a.mkv"), "Show", &mut used, true);
+        let second = apply(&dir.join("c.mkv"), "Show", &mut used, true);
+        // The same name in another case, as a case-insensitive file system sees it.
+        let third = apply(&dir.join("d.mkv"), "show", &mut used, true);
 
-        assert_eq!(report.target, dir.join("b (1).mkv"));
-        assert!(used.contains(&dir.join("b (1).mkv")));
+        assert_eq!(first.target, dir.join("Show.mkv"));
+        assert_eq!(second.target, dir.join("Show (1).mkv"));
+        assert_eq!(third.target, dir.join("show (2).mkv"));
+        assert!(third.collision_adjusted);
         fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -397,17 +416,42 @@ mod tests {
     }
 
     #[test]
-    fn a_hard_link_is_not_replaced() {
+    fn a_hard_link_is_another_file() {
         let dir = temp_dir("hard-link");
         let original = dir.join("a.mkv");
-        let link = dir.join("b.mkv");
         fs::write(&original, "data").unwrap();
-        fs::hard_link(&original, &link).unwrap();
+        fs::hard_link(&original, dir.join("b.mkv")).unwrap();
 
+        let report = apply(&original, "b", &mut HashSet::new(), false);
+
+        assert!(
+            matches!(report.outcome, RenameOutcome::Renamed),
+            "{report:?}"
+        );
+        assert!(report.collision_adjusted);
+        assert_eq!(names(&dir), ["b (1).mkv", "b.mkv"]);
+        assert_eq!(read(&dir.join("b (1).mkv")), "data");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_hard_link_in_another_case_is_not_replaced() {
+        let dir = temp_dir("hard-link-case");
+        let original = dir.join("a.mkv");
+        let link = dir.join("A.mkv");
+        fs::write(&original, "data").unwrap();
+        if fs::hard_link(&original, &link).is_err() {
+            // A case-insensitive file system has no room for both names.
+            fs::remove_dir_all(&dir).unwrap();
+            return;
+        }
+
+        // Same file under the folded name, so this reaches the hop, which must
+        // find the target still taken and put the file back.
         let err = rename_file(&original, &link).unwrap_err();
 
         assert_eq!(err.kind(), io::ErrorKind::AlreadyExists);
-        assert_eq!(names(&dir), ["a.mkv", "b.mkv"]);
+        assert_eq!(names(&dir), ["A.mkv", "a.mkv"]);
         assert_eq!(read(&original), "data");
         fs::remove_dir_all(&dir).unwrap();
     }
