@@ -19,3 +19,8 @@ toml = "1.1.8"
 
 [dev-dependencies]
 insta = "1.49.0"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
