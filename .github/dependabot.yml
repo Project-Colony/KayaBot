@@ -1,8 +1,9 @@
 # Keep the supply chain current: GitHub Actions and Cargo dependencies.
 #
-# Dependabot opening a PR is not the rule being followed - merging it is. See
-# Project-Colony-Resources/design/dependencies.md: everything is on its latest
-# release, always.
+# Copy to .github/dependabot.yml.
+#
+# Dependabot opening a PR is not the rule being followed; merging it is. See
+# design/dependencies.md: everything is on its latest release, always.
 version: 2
 updates:
   # A stale action is the same problem as a stale crate, with more privileges.
@@ -10,6 +11,12 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # The shared signing workflow stays at the organisation pin, which moves
+    # for every program at once: design/releases.md in
+    # Project-Colony-Resources, "The pin". A Dependabot PR would move one
+    # repository alone.
+    ignore:
+      - dependency-name: Project-Colony/Project-Colony-Resources
     groups:
       actions:
         patterns: ["*"]
@@ -25,6 +32,6 @@ updates:
       - dependency-type: all
     groups:
       # Minor and patch bumps arrive as one PR, so a routine week is one review
-      # rather than fifteen. Majors stay separate - they deserve their own read.
+      # rather than fifteen. Majors stay separate: they deserve their own read.
       cargo-minor:
         update-types: ["minor", "patch"]
