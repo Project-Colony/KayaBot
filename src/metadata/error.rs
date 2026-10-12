@@ -7,7 +7,6 @@ pub enum MetadataError {
     NotFound(String),
     InvalidResponse(String),
     RateLimited(String),
-    Cache(String),
     Other(String),
 }
 
@@ -18,7 +17,6 @@ impl fmt::Display for MetadataError {
             Self::NotFound(message) => write!(f, "Not found: {message}"),
             Self::InvalidResponse(message) => write!(f, "Invalid response: {message}"),
             Self::RateLimited(message) => write!(f, "Rate limited: {message}"),
-            Self::Cache(message) => write!(f, "Cache error: {message}"),
             Self::Other(message) => write!(f, "Metadata error: {message}"),
         }
     }

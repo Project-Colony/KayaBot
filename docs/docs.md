@@ -51,7 +51,6 @@ Formats finaux (et fallbacks) :
 - `src/metadata/provider.rs` définit l'interface `MetadataProvider` et l'énumération `MetadataSource`.
 - `src/metadata/aggregate.rs` implémente `MetadataPipeline`, qui orchestre plusieurs providers et agrège les résultats.
 - Les clients réels sont dans `src/metadata/providers/` (`tmdb.rs`, `thetvdb.rs`, `tvmaze.rs`, `omdb.rs`).
-- `src/metadata/filebot_like.rs` reste un provider en mémoire avec cache local (`MetadataCache`), utile pour le mock et l'outillage.
 - `src/metadata/models.rs` définit les types `TitleMatch`, `MovieMatch`, `EpisodeMatch` ainsi que les modèles normalisés (`NormalizedTitle`, `NormalizedEpisode`).
 
 #### Stratégie de sélection des sources

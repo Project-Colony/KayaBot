@@ -17,9 +17,6 @@ and renames the files to a consistent format, in the spirit of FileBot.
 - Previews new names from default or custom templates for series and movies.
 - Renames files with a dry run and collision handling. It never overwrites
   an existing file: a taken name gets a ` (1)` suffix.
-- Caches metadata responses locally.
-- Ships a small CLI, `preload_metadata_cache`, to seed the cache from a JSON
-  file (`--help` for the format).
 
 ## Build from source
 
@@ -59,8 +56,7 @@ Supported environment variables are listed in [`.env.example`](.env.example).
 To find metadata, KayaBot sends the titles, years and episode numbers it parses
 from your file names to the providers you configure: TMDB, TheTVDB, TVmaze
 and OMDb. API keys are stored in plain text in `api_keys.toml`, which only
-your user account can read on Linux and macOS. Metadata responses are cached
-in `metadata_cache.json` in the configuration folder.
+your user account can read on Linux and macOS.
 
 ## Documentation
 
