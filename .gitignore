@@ -1,2 +1,5 @@
 # Secrets
 secrets/.env.local
+
+# Build output
+/target

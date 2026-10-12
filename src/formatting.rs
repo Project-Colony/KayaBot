@@ -51,7 +51,7 @@ impl FormatOptions {
     }
 
     fn config_path() -> Option<PathBuf> {
-        paths::app_config_dir().map(|base| base.join("format_options.toml"))
+        paths::config_dir().map(|dir| dir.join("format_options.toml"))
     }
 }
 
@@ -279,7 +279,7 @@ fn trim_trailing_separators(output: &mut String) {
         if last.is_whitespace()
             || matches!(
                 last,
-                '-' | '–' | '—' | ':' | '.' | '/' | '\\' | '_' | '|' | '(' | '['
+                '-' | '\u{2013}' | '\u{2014}' | ':' | '.' | '/' | '\\' | '_' | '|' | '(' | '['
             )
         {
             output.pop();
@@ -293,7 +293,10 @@ fn trim_leading_separators(value: &str, trim_closing: bool) -> String {
     let mut start = 0;
     for (index, ch) in value.char_indices() {
         if ch.is_whitespace()
-            || matches!(ch, '-' | '–' | '—' | ':' | '.' | '/' | '\\' | '_' | '|')
+            || matches!(
+                ch,
+                '-' | '\u{2013}' | '\u{2014}' | ':' | '.' | '/' | '\\' | '_' | '|'
+            )
             || (trim_closing && matches!(ch, ')' | ']'))
         {
             start = index + ch.len_utf8();

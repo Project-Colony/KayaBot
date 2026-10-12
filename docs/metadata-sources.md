@@ -21,16 +21,17 @@ TheTVDB, TVmaze and OMDb.
 
 ## How KayaBot picks sources
 
-- The source list in the Rename view offers TheMovieDB, TheTVDB and TVmaze in
-  Episode mode, and TheMovieDB and OMDb in Movie mode.
+- The Source list of the Lookup card, in the Rename view, offers TheMovieDB,
+  TheTVDB and TVmaze when the type is Series, and TheMovieDB and OMDb when it is
+  Movie.
 - At start, series use TheTVDB and movies use TheMovieDB. Your last pick for
-  each mode is kept until you close the program.
+  each type is kept until you close the program.
 - A search asks the chosen source and its partners together: TheTVDB with
   TVmaze, TVmaze with TheTVDB, TMDB (for series) with both, and TMDB with OMDb
   or OMDb with TMDB for movies. Their answers are merged, so the partners are
   not a fallback tried after a failure but a second opinion asked at the same
   time.
-- The "force source" option asks the chosen source only.
+- The "Use this source only" option asks the chosen source only.
 - A source without a key returns an error before any request and is left out of
   the merge. TVmaze needs no key, so a series search always reaches it.
 
@@ -46,9 +47,9 @@ TheTVDB, TVmaze and OMDb.
   goes in the `Authorization: Bearer` header; anything else is a v3 key and goes
   in the `api_key` query parameter.
 - Locale: `language` (for example `en-US`) on every request and `region` on
-  searches. When the language and region in Settings are both unset, KayaBot
-  sends `fr-FR`. A language alone gets its usual region (`en` gets `US`, `fr`
-  gets `FR`) and a region alone its usual language.
+  searches. When the metadata language and region in Preferences are both
+  unset, KayaBot sends `fr-FR`. A language alone gets its usual region (`en`
+  gets `US`, `fr` gets `FR`) and a region alone its usual language.
 - Terms: the [API terms of use](https://www.themoviedb.org/api-terms-of-use)
   require the notice "This product uses the TMDB API but is not endorsed or
   certified by TMDB" and follow the

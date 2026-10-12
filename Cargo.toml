@@ -8,17 +8,20 @@ license = "GPL-3.0-or-later"
 repository = "https://github.com/Project-Colony/KayaBot"
 
 [dependencies]
+# colony-ui is built on iced 0.14: the two must move together.
+colony-ui = "0.1.6"
 dirs = "7.0.0"
-eframe = "0.27.2"
+iced = "0.14.0"
 open = "5.4.4"
 rfd = "0.17.2"
 reqwest = { version = "0.13.5", features = ["blocking", "json", "query"] }
 serde = { version = "1.0.229", features = ["derive"] }
-serde_json = "1.0.151"
+serde_json = "1.0.154"
 toml = "1.1.8"
 
 [dev-dependencies]
 insta = "1.49.0"
+ttf-parser = "0.25.1"
 
 [profile.release]
 lto = "thin"

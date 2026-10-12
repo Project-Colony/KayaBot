@@ -1,15 +1,28 @@
 # Architecture
 
 KayaBot is one Rust crate with a library (`kayabot`, `src/lib.rs`) and a
-desktop program (`src/main.rs`). The library holds everything that does not
-draw a window: parsing, matching, the metadata clients, name templates and the
-rename engine. The program is the window, its state and the settings files.
+desktop program (`src/main.rs`). The library holds everything, the interface
+included; `main.rs` only answers `--version`, picks the configuration folder
+and opens the window.
 
 ## Source layout
 
 | Path | What it does |
 |---|---|
-| `src/main.rs` | the window (eframe/egui): the sidebar, the Rename view, the Settings page, the settings and key files, and the export to CSV/JSON |
+| `src/main.rs` | the entry point: `--version`, the configuration folder, then `ui::run` |
+| `src/ui/mod.rs` | `run`: applies the preferences, registers the fonts and starts iced |
+| `src/ui/app.rs` | `App`, every `Message` it handles, the frame around the views, file drops and keyboard shortcuts |
+| `src/ui/sidebar.rs` | the sidebar: the KayaBot button that opens Preferences, then the Rename entry |
+| `src/ui/preferences.rs` | the Preferences page: General, Appearance and Accessibility from colony-ui, then Connections, Renaming and About |
+| `src/ui/rename/mod.rs` | the Rename view's state and messages, the rename itself, and the name preview |
+| `src/ui/rename/files.rs`, `preview.rs`, `details.rs`, `summary.rs` | the file list, the proposed names with the lookup and naming options, the match dialog, and the summary with its export and the confirmation dialog |
+| `src/ui/widgets.rs` | KayaBot's own buttons, cards, fields and dialogs, styled from the palette, and its Nerd Font glyphs |
+| `src/i18n/` | `t` and `tf`, with `en.json` and `fr.json`; the Preferences skeleton and theme labels come from `colony_ui::i18n` |
+| `src/config.rs` | `Config`, saved as `preferences.json`, and the conversion of the older `preferences.toml` |
+| `src/api_keys.rs` | the keys from the environment and `api_keys.toml`, `write_private_file`, and `migrate_config_credentials` |
+| `src/lookup.rs` | which sources a lookup asks, what it asks them, and the lookups the interface runs off its thread |
+| `src/export.rs` | the rename summary as CSV or JSON |
+| `src/paths.rs` | the configuration folder, from `colony_ui::paths`, and the one-time copy from older locations |
 | `src/matching/parsing.rs` | `parse_filename`: splits a file name into tokens and reads a title, a season and episode, and a year |
 | `src/matching/mod.rs` | `match_files`: turns each parsed name into a `MatchResult` with its candidates (episode, movie or series), a status and a confidence |
 | `src/matching/advanced.rs` | `normalize_name` and `rank_candidates`, a Jaro-Winkler and Levenshtein score. The pipeline uses it for the title similarity of each result |
@@ -19,19 +32,30 @@ rename engine. The program is the window, its state and the settings files.
 | `src/metadata/models.rs` | `TitleMatch`, `EpisodeMatch`, `MovieMatch` and the `ExternalIds` and extras they carry |
 | `src/metadata/locale.rs` | `MetadataLocale`, the language and region sent to the sources |
 | `src/metadata/error.rs` | `MetadataError`, the errors a client reports to the window |
-| `src/formatting/mod.rs` | name templates, title clean-up, and `format_options.toml` |
+| `src/formatting.rs` | name templates, title clean-up, and `format_options.toml` |
 | `src/rename.rs` | the rename engine |
-| `src/paths.rs` | the configuration folder |
 
-`src/main.rs` declares `formatting`, `matching`, `metadata` and `paths` as its
-own modules rather than importing them from the library, so those four are
-compiled twice; only `rename` comes from `kayabot::`. `cargo run` starts the
-program.
+## The interface
+
+The window is built with [iced](https://iced.rs) 0.14 and
+[colony-ui](https://crates.io/crates/colony-ui), the design system every
+Colony program shares. Colours come from the active Colony palette, text from
+the three Colony fonts through `Typography::current()` (so the dyslexia font
+and both text sizes reach every widget), and sizes go through `sz()`. The
+built-in iced widgets get the palette through `App::theme`.
+
+`App` follows the iced pattern: `update` takes a `Message` and changes the
+state, `view` draws it. The Rename view is a component of its own
+(`ui::rename::Rename`) with its own `Message`, wrapped in `Message::Rename`.
+Preferences replaces the content area, never a window or a dialog, and the
+KayaBot button and the page's Close button send the same
+`Message::TogglePreferences`. A change in Preferences applies at once and is
+saved; there is no Save button.
 
 ## From an old name to a new one
 
 1. **Add files.** The Rename view takes files or a folder from the system file
-   dialog (`rfd`).
+   dialog (`rfd`), or files and folders dropped on the window.
 2. **Parse.** `matching::match_files` reads each name. `S01E02`, `S01 E02`,
    `1x02`, a three-digit `102` and `Season 1 Episode 2` (or `Saison`) give a
    season and episode; a four-digit number from 1900 to 2099 gives a year.
@@ -41,7 +65,7 @@ program.
 3. **Pick the sources.** Series default to TheTVDB with TVmaze as its partner,
    movies to TMDB with OMDb. The active list is the chosen source plus its
    partners (TMDB chosen for a series brings both TheTVDB and TVmaze). The
-   "force source" checkbox keeps only the chosen one.
+   "Use this source only" checkbox keeps only the chosen one.
 4. **Search.** `MetadataPipeline::search_title` sends the title (plus the year
    for a movie) to every active source at once, on scoped threads, and waits
    for all of them. A source that fails or has no key is left out; the search
@@ -57,11 +81,14 @@ program.
 7. **Format.** `formatting` renders the template for each file (see below).
 8. **Preview, dry run, rename.** `rename::apply` builds the target next to the
    original and keeps the extension. With the dry run on, it resolves the name
-   and touches nothing; otherwise it renames, then the list reloads from the new
+   and touches nothing; otherwise, once the user confirms (unless that is
+   turned off in Preferences), it renames, then the list reloads from the new
    names. Each file's outcome feeds the summary, which can be exported.
 
-The provider clients use blocking HTTP with a 10 second timeout, called from
-the window's update loop, so the window does not redraw until a search ends.
+The provider clients use blocking HTTP with a 10 second timeout. The interface
+never calls them itself: `Rename::run` hands the lookup to a worker thread and
+gets the answer back as a message, and Match and Fetch stay disabled while one
+runs. A match started before the file list changed is dropped when it lands.
 
 ## Name templates
 
@@ -94,17 +121,30 @@ syncs it, then removes the original.
 
 ## Configuration files
 
-`paths::app_config_dir` is `Colony/KayaBot` under `dirs::config_dir()` on Linux
-and macOS and under `dirs::data_local_dir()` (`%LOCALAPPDATA%`) on Windows.
+`paths::config_dir` is `colony_ui::paths::config_dir("KayaBot")`:
+`~/.config/Colony/KayaBot` on Linux, `%LOCALAPPDATA%\Colony\KayaBot` on
+Windows and `~/Library/Application Support/Colony/KayaBot` on macOS.
 
-- `api_keys.toml`: read at start and by the reload button of the API
-  configuration section of Settings; written by its save button through
-  `write_private_file`, which writes a temporary file with mode 0600 on Unix
-  and renames it into place. Environment variables override each key.
-- `preferences.toml`: written whenever a setting changes and when the window
-  closes. It also reads an older flat format. Only the theme and the metadata language and region are
-  applied; the other settings are stored and have no effect yet.
-- `format_options.toml`: the last template choice.
+Before anything is read, `paths::init` checks that folder. When it is empty and
+an older location has files (first the Windows roaming profile,
+`%APPDATA%\Colony\KayaBot`, then `~/.kayabot`), it copies them over and writes
+a `.migrated` marker. The older folder is never changed. A copy that fails is
+undone, and the older folder is used for that run.
+
+- `preferences.json`: `Config`, which is colony-ui's `StandardPreferences`
+  (theme, accent, text sizes, high contrast, dyslexia font, reduced motion)
+  plus the interface language, the metadata language and region, the two
+  confirmations and the dry-run default. Each field is read on its own, so a
+  bad value only resets that field. Written whenever a preference changes.
+  When it is missing, the `preferences.toml` of an older version, flat or in
+  sections, is read once and saved in the new format; its settings that never
+  did anything are dropped.
+- `api_keys.toml`: read at start; written as the keys are typed in
+  Preferences, Connections, through `write_private_file`, which writes a
+  temporary file with mode 0600 on Unix and renames it into place.
+  Environment variables override each key.
+- `format_options.toml`: the name templates and the year and episode title
+  choices.
 - `config.toml`: only from older versions. Before the window opens,
   `migrate_config_credentials` moves its keys into `api_keys.toml` and removes
   them, AniDB credentials included.
@@ -113,7 +153,13 @@ and macOS and under `dirs::data_local_dir()` (`%LOCALAPPDATA%`) on Windows.
 
 - Unit tests sit next to the code: templates, the rename engine, the pipeline,
   each provider client against the recorded responses in `tests/fixtures/`,
-  and in `main.rs` the key migration, the private file writes and the export.
+  the key migration and the private file writes, the export, the preferences
+  and their conversion, the copy from older folders, and the interface's
+  `update` with a mock source (`ui/app.rs`, `ui/rename/tests.rs`). The unit
+  tests write to a temporary folder, never to the real profile.
+- `i18n` checks that `en.json` and `fr.json` have the same keys and
+  placeholders and that every key the interface asks for exists, and
+  `ui/widgets.rs` that every glyph exists in the Nerd Font.
 - `tests/matching_snapshots.rs` runs the parser over an episode, a movie and
   a bare title and compares the result with an `insta` snapshot. The empty
   files in `tests/fixtures/media_samples` feed the rename and Rename view

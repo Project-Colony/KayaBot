@@ -16,13 +16,13 @@ online databases at once, and shows every new name before it touches a file.
 
 > **Status:** early prototype, and no release has been published yet. The
 > Rename view works end to end: parsing, matching against TMDB, TheTVDB,
-> TVmaze and OMDb, a preview, a dry run, the rename itself and a CSV or JSON
-> summary. The parser, the name templates, the rename engine and the four
-> provider clients have automated tests, the clients against recorded
-> responses; the window itself is tested by hand only. The Episodes,
-> Subtitles, SFV and Filter screens in the sidebar are empty placeholders, the
-> interface mixes English and French text, and most settings are saved but do
-> nothing yet: only the theme and the metadata language and region take effect.
+> TVmaze and OMDb, a preview, a dry run with a confirmation before a real
+> rename, the rename itself and a CSV or JSON summary. The interface is built
+> on iced with the Colony design system, in English and French; Preferences
+> holds the theme, accessibility, language, API keys and renaming options. The
+> parser, the name templates, the rename engine, the four provider clients and
+> the interface's state handling have automated tests, the clients against
+> recorded responses; how the window looks is checked by hand only.
 
 ## Why KayaBot
 
@@ -55,15 +55,17 @@ Show Name 1x2 - Episode Title.mkv       preview, dry run, rename
 - Guesses whether each file is an episode or a movie. You can switch it.
 - Matches series against TheTVDB and TVmaze (TMDB on request) and movies
   against TMDB and OMDb. The chosen source and its partner are queried in
-  parallel; the "force source" option limits a search to the chosen one.
+  parallel; the "Use this source only" option limits a search to the chosen
+  one. Lookups run in the background, so the window stays responsive.
 - Ranks the merged results by source trust, title similarity and the source's
   own rating, then picks the episode by season and number.
 - Builds names from templates. The defaults are `{n} {s}x{e} - {t}` for
   episodes and `{n} ({y})` for movies; presets and custom templates are
   available, and a missing value drops with its separator.
-- Previews every new name, offers a dry run, and renames in place. It keeps the
-  extension, never overwrites a file (a taken name gets ` (1)`, ` (2)` and so
-  on), and handles renames that only change the letter case.
+- Previews every new name, offers a dry run, asks before a real rename (you can
+  turn that off), and renames in place. It keeps the extension, never
+  overwrites a file (a taken name gets ` (1)`, ` (2)` and so on), and handles
+  renames that only change the letter case.
 - Exports the result of a run as CSV or JSON.
 
 ## Installation
@@ -114,9 +116,17 @@ KayaBot keeps its files in one folder:
 
 | File | What it holds |
 |---|---|
-| `api_keys.toml` | your API keys, written by the API configuration section of Settings or by hand |
-| `preferences.toml` | the choices made in Settings, saved as you change them |
-| `format_options.toml` | the last name template you picked |
+| `preferences.json` | the choices made in Preferences, saved as you change them |
+| `api_keys.toml` | your API keys, typed in Preferences under Connections, or written by hand |
+| `format_options.toml` | the name templates, and whether names carry the year and the episode title |
+
+Older versions kept these files in `~/.kayabot/`, and on Windows in the
+roaming profile, `%APPDATA%\Colony\KayaBot\`. When the folder above is still
+empty, the first start copies them over and leaves a `.migrated` marker. The
+old folder is left as it was, to delete by hand; if the copy fails, KayaBot
+keeps using the old folder and tries again at the next start. A
+`preferences.toml` from an older version is read once and saved as
+`preferences.json`.
 
 TVmaze needs no key. TMDB takes either a v4 read access token or a v3 API key,
 and TheTVDB and OMDb each need their own key:
@@ -202,12 +212,13 @@ account and no update check.
 
 | Data | Stored or sent | Where, and why |
 |---|---|---|
-| Settings | stored | `preferences.toml` and `format_options.toml` in the folder under [Configuration](#configuration) |
+| Preferences | stored | `preferences.json` and `format_options.toml` in the folder under [Configuration](#configuration) |
+| Files of older versions | copied | once, from `~/.kayabot/` or the Windows roaming profile into the folder under [Configuration](#configuration). Nothing leaves the computer, and the old copies, API keys included, stay where they were until you delete them |
 | API keys | stored | `api_keys.toml` in the same folder, in plain text. On Linux and macOS KayaBot writes it readable by your user only (mode 0600) and tightens an existing file to that when it reads it. Keys given as environment variables are never written to disk |
 | Keys left in `config.toml` by older versions | moved | into `api_keys.toml` on start, then removed from `config.toml` |
 | Titles to look up | sent | when you match files: the title parsed from the file name, or the one you typed, plus the year for a movie, to the active sources below. The file name, its folder and its contents are never sent, and neither are season or episode numbers: KayaBot downloads the show's episode list and picks the episode locally |
 | Title IDs | sent | the ID of the chosen show or movie, to the source that returned it, to fetch its episode list or details |
-| Metadata language and region | sent | to TMDB (as `language` and `region`, `fr-FR` when Settings leaves both unset) and to TheTVDB |
+| Metadata language and region | sent | to TMDB (as `language` and `region`, `fr-FR` when Preferences leaves both unset) and to TheTVDB |
 | TMDB key | sent | to `api.themoviedb.org` only: a v4 token in the `Authorization` header, a v3 key as the `api_key` parameter in the request URL |
 | TheTVDB key | sent | to `api4.thetvdb.com` only, in the body of its login request; the session token it returns is kept in memory and never saved |
 | OMDb key | sent | to `www.omdbapi.com` only, as the `apikey` parameter in the request URL |
