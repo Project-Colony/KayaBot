@@ -12,7 +12,7 @@ rename engine. The program is the window, its state and the settings files.
 | `src/main.rs` | the window (eframe/egui): the sidebar, the Rename view, the Settings page, the settings and key files, and the export to CSV/JSON |
 | `src/matching/parsing.rs` | `parse_filename`: splits a file name into tokens and reads a title, a season and episode, and a year |
 | `src/matching/mod.rs` | `match_files`: turns each parsed name into a `MatchResult` with its candidates (episode, movie or series), a status and a confidence |
-| `src/matching/advanced.rs` | `normalize_name` and `rank_candidates`, a Jaro-Winkler and Levenshtein ranking. Exported and tested, not called by the program |
+| `src/matching/advanced.rs` | `normalize_name` and `rank_candidates`, a Jaro-Winkler and Levenshtein score. The pipeline uses it for the title similarity of each result |
 | `src/metadata/provider.rs` | the `MetadataProvider` trait (`search_title`, `fetch_episode_list`, `fetch_movie_details`) and the `MetadataSource` enum |
 | `src/metadata/providers/` | one client per source: `tmdb.rs`, `thetvdb.rs`, `tvmaze.rs`, `omdb.rs` |
 | `src/metadata/aggregate.rs` | `MetadataPipeline`: queries the active sources in parallel, merges and ranks their answers |

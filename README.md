@@ -131,7 +131,9 @@ tvmaze_user_agent = "KayaBot"
 Environment variables take precedence over the file. They are listed in
 [`.env.example`](.env.example): `KAYABOT_TMDB_BEARER_TOKEN` (or
 `KAYABOT_TMDB_API_KEY`), `KAYABOT_TVDB_API_KEY`, `KAYABOT_OMDB_API_KEY` and
-`KAYABOT_TVMAZE_USER_AGENT`.
+`KAYABOT_TVMAZE_USER_AGENT`. `KAYABOT_TVMAZE_API_KEY` is an older name for the
+TVmaze user agent, read only when `KAYABOT_TVMAZE_USER_AGENT` is unset; TVmaze
+has no API key.
 
 Older versions also read keys from `config.toml` in the same folder. On start,
 KayaBot moves any key it finds there into `api_keys.toml`, unless that file
