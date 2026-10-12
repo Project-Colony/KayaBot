@@ -16,9 +16,9 @@ version exists. **Not yet** means there is no code for it.
 | Handle name collisions | **Has it.** Never overwrites; a taken name gets ` (1)`, ` (2)` and so on, and two files of a batch never collide |
 | Preview and dry run | **Has it.** Every new name is shown first, and a dry run renames nothing |
 | Move files into series, season or movie folders | **Not yet.** Files are renamed in their own folder |
-| Rename subtitles with their video | **Not yet.** The Subtitles screen is a placeholder |
+| Rename subtitles with their video | **Not yet** |
 | Write `.nfo` files or file tags | **Not yet** |
-| Check SFV or other checksums | **Not yet.** The SFV screen is a placeholder |
+| Check SFV or other checksums | **Not yet** |
 
 ## Matching
 
@@ -31,7 +31,7 @@ version exists. **Not yet** means there is no code for it.
 | Choose between ambiguous results | **Partly.** Candidates are listed with their score and you can pick another one, or correct a file's title, season and episode by hand. There is no interactive prompt during a batch |
 | Match by file hash | **Not yet** |
 | Editions and cuts, multi-episode files, specials | **Not yet** |
-| Filter files by rules | **Not yet.** The Filter screen is a placeholder |
+| Filter files by rules | **Not yet** |
 
 ## Metadata
 
