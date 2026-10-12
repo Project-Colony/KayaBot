@@ -18,22 +18,15 @@ rename engine. The program is the window, its state and the settings files.
 | `src/metadata/aggregate.rs` | `MetadataPipeline`: queries the active sources in parallel, merges and ranks their answers |
 | `src/metadata/models.rs` | `TitleMatch`, `EpisodeMatch`, `MovieMatch` and the `ExternalIds` and extras they carry |
 | `src/metadata/locale.rs` | `MetadataLocale`, the language and region sent to the sources |
+| `src/metadata/error.rs` | `MetadataError`, the errors a client reports to the window |
 | `src/formatting/mod.rs` | name templates, title clean-up, and `format_options.toml` |
 | `src/rename.rs` | the rename engine |
 | `src/paths.rs` | the configuration folder |
 
 `src/main.rs` declares `formatting`, `matching`, `metadata` and `paths` as its
 own modules rather than importing them from the library, so those four are
-compiled twice; only `rename` comes from `kayabot::`.
-
-### Unused code
-
-`src/metadata/cache.rs` (an on-disk metadata cache), `src/metadata/filebot_like.rs`
-(an in-memory provider built on it) and `src/bin/preload_metadata_cache.rs` (a
-helper that seeds the cache from a JSON file) are compiled but not used by the
-program, and the release does not ship the helper. The `KAYABOT_CACHE_*`
-variables in `.env.example` only affect that helper. Because the helper is a
-second binary, `cargo run` needs `--bin kayabot`.
+compiled twice; only `rename` comes from `kayabot::`. `cargo run` starts the
+program.
 
 ## From an old name to a new one
 
