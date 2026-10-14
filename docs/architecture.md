@@ -107,8 +107,8 @@ When a token has no value, it is dropped together with the separators around
 it, so a movie without a year becomes `Title`, not `Title ()`. Titles are
 cleaned before use: every character that is not a letter or a digit becomes a
 space (so `Grey's` becomes `Grey s`, and no character a file name cannot hold
-survives), technical tags (`1080p`, `BluRay` and so on) are removed, and runs
-of spaces collapse to one.
+survives), technical tags (`1080p`, `BluRay`, `VF`, `VOSTFR` and so on) are
+removed, and runs of spaces collapse to one.
 
 ## Rename engine
 

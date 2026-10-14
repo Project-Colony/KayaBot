@@ -50,6 +50,12 @@ TheTVDB, TVmaze and OMDb.
   searches. When the metadata language and region in Preferences are both
   unset, KayaBot sends `fr-FR`. A language alone gets its usual region (`en`
   gets `US`, `fr` gets `FR`) and a region alone its usual language.
+- What KayaBot keeps: the localised title, with the original title as an alias
+  when it differs; the year from `release_date` (movies) or `first_air_date`
+  (series); and `vote_average` divided by 10 as the source rating.
+- Quota: no fixed quota since December 2019, but TMDB still answers with a
+  `429` somewhere around 40 requests per second
+  ([rate limiting](https://developer.themoviedb.org/docs/rate-limiting)).
 - Terms: the [API terms of use](https://www.themoviedb.org/api-terms-of-use)
   require the notice "This product uses the TMDB API but is not endorsed or
   certified by TMDB" and follow the
@@ -66,6 +72,8 @@ TheTVDB, TVmaze and OMDb.
   `/refresh_token` and keeps it in memory only.
 - Locale: the language as a `language` query parameter and, with the region, as
   `Accept-Language`.
+- What KayaBot keeps: the series name, its `year`, and the `score` of the
+  search result as the source rating.
 - Terms: TheTVDB is free for projects earning less than $50k a year, against
   attribution with a direct link to TheTVDB.com, shown to the people who see
   its data ([API information](https://thetvdb.com/api-information)). The
@@ -81,6 +89,10 @@ TheTVDB, TVmaze and OMDb.
   identifies them; KayaBot sends `KayaBot` unless `tvmaze_user_agent` or
   `KAYABOT_TVMAZE_USER_AGENT` sets another one.
 - Locale: none.
+- What KayaBot keeps: the show name, the year from `premiered`, and the
+  `score` of the search result (the show's own score when that is 0) as the
+  source rating.
+- Quota: at least 20 calls every 10 seconds per IP address.
 - Terms: the [API](https://www.tvmaze.com/api) is licensed under
   [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/): TVmaze must
   be credited as the source, and shared data follows the ShareAlike terms.
@@ -91,6 +103,11 @@ TheTVDB, TVmaze and OMDb.
 - Requests: `?s=<title>` to search and `?i=<IMDb ID>` for a movie's details.
 - Authentication: the key goes in the `apikey` query parameter.
 - Locale: none.
+- What KayaBot keeps: the title, the first four digits of `Year`, and the IMDb
+  ID, which is also the result's ID. OMDb gives no rating KayaBot uses: every
+  result gets a fixed source rating of 0.7.
+- Quota: a free key allows 1,000 requests a day
+  ([API keys](https://www.omdbapi.com/apikey.aspx)).
 - Terms: OMDb content is licensed under
   [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/), and OMDb is
   not endorsed by or affiliated with IMDb.com

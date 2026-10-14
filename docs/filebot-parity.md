@@ -15,8 +15,10 @@ version exists. **Not yet** means there is no code for it.
 | Keep the extension | **Has it** |
 | Handle name collisions | **Has it.** Never overwrites; a taken name gets ` (1)`, ` (2)` and so on, and two files of a batch never collide |
 | Preview and dry run | **Has it.** Every new name is shown first, and a dry run renames nothing |
-| Move files into series, season or movie folders | **Not yet.** Files are renamed in their own folder |
+| Move files into series, season, movie or collection folders | **Not yet.** Files are renamed in their own folder |
 | Rename subtitles with their video | **Not yet** |
+| Normalise subtitle language suffixes (`.fr`, `.en`, `.multi`) | **Not yet** |
+| Download subtitles | **Not yet** |
 | Write `.nfo` files or file tags | **Not yet** |
 | Check SFV or other checksums | **Not yet** |
 
