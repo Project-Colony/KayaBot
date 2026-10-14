@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/Project-Colony/KayaBot/compare/v0.2.0...v0.2.1) (2026-10-14)
+
+
+### Documentation
+
+* bring back the French documentation as translations of the current pages ([#21](https://github.com/Project-Colony/KayaBot/issues/21)) ([a861962](https://github.com/Project-Colony/KayaBot/commit/a86196228c1e3e2e7822965a88f2ff68d965b6b1))
+
 ## [0.2.0](https://github.com/Project-Colony/KayaBot/compare/v0.1.0...v0.2.0) (2026-10-14)
 
 
