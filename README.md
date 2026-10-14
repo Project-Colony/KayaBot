@@ -158,6 +158,18 @@ already sets it, and removes every key from `config.toml`.
 - [docs/filebot-parity.md](docs/filebot-parity.md): which FileBot features
   KayaBot has today and which it does not.
 
+## Language
+
+This README and the pages above are also in French. **English is canonical**:
+when a translation disagrees with it, the English file is right.
+
+- **Français** - [README](docs/i18n/fr/README.md) · [architecture](docs/i18n/fr/docs/architecture.md) · [metadata sources](docs/i18n/fr/docs/metadata-sources.md) · [FileBot parity](docs/i18n/fr/docs/filebot-parity.md)
+
+Each translation carries the hash of the English file it was made from, and CI
+fails when the English moves ahead: see [`scripts/i18n-check.sh`](scripts/i18n-check.sh).
+`docs/i18n/fr/` mirrors the repository root, so `docs/i18n/fr/docs/architecture.md`
+is the French `docs/architecture.md`.
+
 ## Code signing policy
 
 Every release asset is signed by the Project Colony organisation in CI, never on
