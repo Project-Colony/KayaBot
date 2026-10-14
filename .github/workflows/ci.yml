@@ -24,10 +24,14 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master, 2026-10-09
-        with:
-          toolchain: stable
-          components: clippy, rustfmt
+      # rustup is on every GitHub-hosted runner image: no third-party action to
+      # pin, and nothing for Dependabot to lose track of. bash keeps the same
+      # step working on the Windows leg.
+      - name: Install Rust
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy,rustfmt --no-self-update
+          rustup default stable
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
@@ -45,8 +49,8 @@ jobs:
   # Without this job nothing ever builds on it, and it drifts.
   #
   # RUSTUP_TOOLCHAIN is what pins the cargo invocations: it outranks both the
-  # rustup default the toolchain action sets and any rust-toolchain.toml. The
-  # rustc check makes a pin that silently stopped working fail loudly.
+  # runner's rustup default and any rust-toolchain.toml. The rustc check makes
+  # a pin that silently stopped working fail loudly.
   msrv:
     name: MSRV
     runs-on: ubuntu-latest
@@ -63,9 +67,8 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "RUSTUP_TOOLCHAIN=$version" >> "$GITHUB_ENV"
 
-      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master, 2026-10-09
-        with:
-          toolchain: ${{ steps.msrv.outputs.version }}
+      - name: Install Rust ${{ steps.msrv.outputs.version }}
+        run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --no-self-update
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
