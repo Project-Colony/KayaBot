@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/Project-Colony/KayaBot/compare/v0.2.1...v0.2.2) (2026-11-09)
+
+
+### Fixes
+
+* **deps:** update dependencies and Rust to 1.99 and fix the open security advisories ([#30](https://github.com/Project-Colony/KayaBot/issues/30)) ([454f3a7](https://github.com/Project-Colony/KayaBot/commit/454f3a771e41e498b1375ad3489d28e35e6f8240))
+
 ## [0.2.1](https://github.com/Project-Colony/KayaBot/compare/v0.2.0...v0.2.1) (2026-10-14)
 
 
