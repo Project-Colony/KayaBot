@@ -101,7 +101,7 @@ cargo build --release
 ./target/release/kayabot
 ```
 
-Requires Rust 1.88 or newer. `kayabot --version` prints the version and exits
+Requires Rust 1.99 or newer. `kayabot --version` prints the version and exits
 without opening a window.
 
 ## Configuration
