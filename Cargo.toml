@@ -2,7 +2,7 @@
 name = "kayabot"
 version = "0.2.1"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.99"
 description = "Desktop media renamer that matches movies and TV episodes against online metadata sources"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/Project-Colony/KayaBot"
@@ -12,12 +12,12 @@ repository = "https://github.com/Project-Colony/KayaBot"
 colony-ui = "0.1.6"
 dirs = "7.0.0"
 iced = "0.14.0"
-open = "5.4.4"
-rfd = "0.17.2"
+open = "5.4.5"
+rfd = "0.18.0"
 reqwest = { version = "0.13.5", features = ["blocking", "json", "query"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
-toml = "1.1.8"
+toml = "1.2.1"
 
 [dev-dependencies]
 insta = "1.49.0"
