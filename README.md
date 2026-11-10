@@ -14,7 +14,7 @@ punctuation but does not know the episode's title, and FileBot, the usual tool
 for the job, needs a paid licence. KayaBot parses the file names, asks several
 online databases at once, and shows every new name before it touches a file.
 
-> **Status:** early prototype, and no release has been published yet. The
+> **Status:** early prototype. The
 > Rename view works end to end: parsing, matching against TMDB, TheTVDB,
 > TVmaze and OMDb, a preview, a dry run with a confirmation before a real
 > rename, the rename itself and a CSV or JSON summary. The interface is built
@@ -73,12 +73,11 @@ Show Name 1x2 - Episode Title.mkv       preview, dry run, rename
 ### Via Colony (recommended)
 
 Search for **KayaBot** in [Colony](https://github.com/Project-Colony/Colony) and
-install it. Updates arrive through the launcher. KayaBot appears there once its
-first release is published.
+install it. Updates arrive through the launcher.
 
 ### Direct binary download
 
-No release has been published yet. Each release will carry these assets on the
+Each release carries these assets on the
 [latest release](../../releases/latest) page:
 
 | Platform | Asset |
