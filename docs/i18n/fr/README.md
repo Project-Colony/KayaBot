@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=afbc3a095596dcdf80ab3634a48821c1184571aa -->
+<!-- eidos-i18n: source=README.md sha=76a702b86fe0876708a1afa85004771ba26963c3 -->
 
 <div align="center">
 
@@ -113,7 +113,7 @@ cargo build --release
 ./target/release/kayabot
 ```
 
-Nécessite Rust 1.99 ou plus récent. `kayabot --version` affiche la version et
+Nécessite Rust 1.100 ou plus récent. `kayabot --version` affiche la version et
 quitte sans ouvrir de fenêtre.
 
 ## Configuration
